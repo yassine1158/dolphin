@@ -34,6 +34,7 @@ var HTTP_STATUS = {
 
 // src/core/schema.ts
 var MAX_POSTS = 10;
+var MAX_POINTS = 5;
 var THEMES = ["dark", "light", "accent"];
 var STYLES = ["checks", "steps"];
 var POSTS_JSON_SCHEMA = {
@@ -61,6 +62,28 @@ var POSTS_JSON_SCHEMA = {
     }
   }
 };
+var str = (v, max = 2e3) => typeof v === "string" ? v.trim().slice(0, max) : "";
+var strList = (v, maxItems, maxLen = 200) => Array.isArray(v) ? v.map((x) => str(x, maxLen)).filter(Boolean).slice(0, maxItems) : [];
+var cleanHashtag = (h) => h.replace(/^#+/, "").replace(/\s+/g, "");
+function parseDrafts(value) {
+  const posts = value?.posts;
+  if (!Array.isArray(posts)) throw new DolphinError("invalid_output", "The model answer has no posts array.");
+  const drafts = posts.slice(0, MAX_POSTS).map((raw) => {
+    const p = raw ?? {};
+    return {
+      tag: str(p.tag, 40),
+      title: str(p.title, 120),
+      subtitle: str(p.subtitle, 160),
+      points: strList(p.points, MAX_POINTS, 120),
+      style: STYLES.includes(p.style) ? p.style : "checks",
+      theme: THEMES.includes(p.theme) ? p.theme : "dark",
+      caption: str(p.caption, 2200),
+      hashtags: strList(p.hashtags, 10, 60).map(cleanHashtag).filter(Boolean)
+    };
+  }).filter((d) => d.title && d.caption);
+  if (!drafts.length) throw new DolphinError("invalid_output", "The model answer contains no usable post.");
+  return drafts;
+}
 
 // src/core/brand.ts
 var LANGS = ["fr", "en", "ar"];
@@ -146,6 +169,187 @@ function validateGenerateRequest(input) {
   if (notes) req.notes = notes;
   if (avoid) req.avoidTitles = avoid;
   return req;
+}
+
+// src/adapters/llm/claude.ts
+import Anthropic from "@anthropic-ai/sdk";
+
+// src/core/cost.ts
+var DEFAULT_MODEL = "claude-opus-5-5";
+
+// src/core/prompt.ts
+var LANGUAGE = { fr: "French", en: "English", ar: "Modern Standard Arabic" };
+var line = (label, value) => value ? `${label}: ${value}
+` : "";
+function buildSystemPrompt(brand) {
+  const rules = brand.rules ?? {};
+  const available = brand.products.filter((p) => p.status === "available");
+  const soon = brand.products.filter((p) => p.status === "soon");
+  const fmt = (p) => `- ${p.name}${p.details ? ` \u2014 ${p.details}` : ""}`;
+  const contact = [brand.contact.whatsapp && `WhatsApp ${brand.contact.whatsapp}`, brand.contact.phone && `phone ${brand.contact.phone}`, brand.contact.website].filter(Boolean).join(", ");
+  const hard = [
+    'Only sell what is AVAILABLE. Products coming soon are only announced ("coming soon", "be the first to know"), never sold.',
+    "Never invent facts, figures, promises, awards, discounts or certifications that are not written in this prompt.",
+    "Technical advice must be accurate and cautious.",
+    "Every post differs from the others: angle, title and theme."
+  ];
+  if (rules.hidePrices !== false) hard.push("Never give a price, a minimum quantity, a selling unit or a delivery delay: those are discussed privately with the customer.");
+  for (const topic of rules.neverMention ?? []) hard.push(`Never mention: ${topic}.`);
+  if (brand.fullName) hard.push(`When the full company name is used, write it exactly: "${brand.fullName}".`);
+  for (const x of rules.extra ?? []) hard.push(x);
+  return `You are the social media manager of ${brand.name}${brand.fullName ? ` (${brand.fullName})` : ""}.
+You write Facebook and Instagram posts in ${LANGUAGE[brand.language]}, in simple and warm wording.
+${line("Location", brand.location)}${line("Audience", brand.audience)}${line("Contact for the call to action", contact)}
+Available now:
+${available.length ? available.map(fmt).join("\n") : "- (nothing is sold yet: only announce)"}
+${soon.length ? `
+Coming soon:
+${soon.map(fmt).join("\n")}
+` : ""}
+Rules you never break:
+${hard.map((r) => "- " + r).join("\n")}`;
+}
+function buildUserPrompt(req) {
+  const parts = [`Write ${req.count} post(s). They will be published one per day, in order.`];
+  if (req.subject) parts.push(`Subject: ${req.subject}.`);
+  if (req.tone) parts.push(`Tone: ${req.tone}.`);
+  if (req.notes) parts.push(`Instruction from the manager: ${req.notes}`);
+  if (req.avoidTitles?.length) parts.push(`Titles already used, do not repeat them:
+${req.avoidTitles.map((t) => "- " + t).join("\n")}`);
+  return parts.join("\n");
+}
+
+// src/adapters/llm/claude.ts
+var ClaudeLlm = class {
+  model;
+  client;
+  maxTokens;
+  constructor(opts = {}) {
+    this.model = opts.model ?? DEFAULT_MODEL;
+    this.maxTokens = opts.maxTokens ?? 16e3;
+    this.client = opts.client ?? new Anthropic({
+      ...opts.apiKey ? { apiKey: opts.apiKey } : {},
+      ...opts.allowBrowser ? { dangerouslyAllowBrowser: true } : {}
+    });
+  }
+  async generate(brand, request) {
+    let message;
+    try {
+      message = await this.client.messages.stream({
+        model: this.model,
+        max_tokens: this.maxTokens,
+        system: buildSystemPrompt(brand),
+        messages: [{ role: "user", content: buildUserPrompt(request) }],
+        output_config: { format: { type: "json_schema", schema: POSTS_JSON_SCHEMA } }
+      }).finalMessage();
+    } catch (err) {
+      throw toDolphinError(err);
+    }
+    if (message.stop_reason === "refusal") throw new DolphinError("refusal", "The model declined this request.");
+    if (message.stop_reason === "max_tokens") throw new DolphinError("too_long", "The answer was cut: ask for fewer posts.");
+    const text2 = message.content.flatMap((b) => b.type === "text" ? [b.text] : []).join("");
+    let json;
+    try {
+      json = JSON.parse(text2);
+    } catch {
+      throw new DolphinError("invalid_output", "The model answer is not valid JSON.");
+    }
+    return {
+      drafts: parseDrafts(json),
+      usage: { inputTokens: message.usage.input_tokens, outputTokens: message.usage.output_tokens },
+      model: message.model
+    };
+  }
+};
+function toDolphinError(err) {
+  if (err instanceof DolphinError) return err;
+  if (err instanceof Anthropic.APIConnectionError) return new DolphinError("network", "Cannot reach the Claude API.");
+  if (err instanceof Anthropic.APIError) {
+    const msg = err.message || "Claude API error.";
+    switch (err.status) {
+      case 401:
+        return new DolphinError("auth", "Invalid Claude API key.", 401);
+      case 403:
+        return new DolphinError("permission", "This key has no access to this model.", 403);
+      case 429:
+        return new DolphinError("rate_limit", "Too many requests or spend limit reached.", 429);
+      case 400:
+        return /credit balance/i.test(msg) ? new DolphinError("quota", "Claude credit exhausted: top up the account.", 400) : new DolphinError("invalid_request", msg, 400);
+      default:
+        return (err.status ?? 0) >= 500 ? new DolphinError("overloaded", "The Claude API is overloaded, retry in a few minutes.", err.status) : new DolphinError("unknown", msg, err.status);
+    }
+  }
+  return new DolphinError("unknown", err instanceof Error ? err.message : String(err));
+}
+
+// src/core/schedule.ts
+var SCHEDULE_MIN_MS = 10 * 6e4;
+var SCHEDULE_MAX_MS = 30 * 864e5;
+function assertSchedulable(at, now = /* @__PURE__ */ new Date()) {
+  const delta = at.getTime() - now.getTime();
+  if (!Number.isFinite(delta) || delta < SCHEDULE_MIN_MS || delta > SCHEDULE_MAX_MS) {
+    throw new DolphinError("schedule_window", "The date must be between 10 minutes and 30 days from now.");
+  }
+}
+
+// src/adapters/publish/meta.ts
+var MetaPagePublisher = class {
+  constructor(opts) {
+    this.opts = opts;
+    if (!opts.pageId || !opts.accessToken) throw new DolphinError("not_configured", "Facebook page id and access token are required.");
+    this.base = `https://graph.facebook.com/${opts.graphVersion ?? "v23.0"}/${encodeURIComponent(opts.pageId)}`;
+  }
+  base;
+  async publish({ image, caption, scheduledAt }) {
+    const form = new FormData();
+    form.append("source", image, "dolphin.png");
+    form.append("message", caption);
+    form.append("access_token", this.opts.accessToken);
+    if (scheduledAt) {
+      assertSchedulable(scheduledAt);
+      form.append("published", "false");
+      form.append("unpublished_content_type", "SCHEDULED");
+      form.append("scheduled_publish_time", String(Math.floor(scheduledAt.getTime() / 1e3)));
+    }
+    const data = await this.request(`${this.base}/photos`, { method: "POST", body: form });
+    return { id: data.post_id ?? data.id ?? "" };
+  }
+  async verify() {
+    const url = `${this.base}?fields=name&access_token=${encodeURIComponent(this.opts.accessToken)}`;
+    const data = await this.request(url, { method: "GET" });
+    return { name: data.name ?? "" };
+  }
+  async request(url, init) {
+    const f = this.opts.fetch ?? globalThis.fetch.bind(globalThis);
+    let res;
+    try {
+      res = await f(url, init);
+    } catch {
+      throw new DolphinError("network", "Cannot reach Facebook.");
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) throw graphError(data.error ?? {}, res.status);
+    return data;
+  }
+};
+function graphError(e, status) {
+  const msg = e.message ?? "Facebook error.";
+  switch (e.code) {
+    case 190:
+      return new DolphinError("auth", "The page token is invalid or expired.", status);
+    case 3:
+    case 10:
+    case 200:
+      return new DolphinError("permission", "The token lacks pages_manage_posts for this page.", status);
+    case 4:
+    case 32:
+    case 368:
+      return new DolphinError("rate_limit", "Facebook is temporarily limiting posts.", status);
+    case 100:
+      return /schedul/i.test(msg) ? new DolphinError("schedule_window", "The date must be between 10 minutes and 30 days from now.", status) : new DolphinError("invalid_request", "Wrong page id, or the page is not reachable with this token.", status);
+    default:
+      return new DolphinError("unknown", msg, status);
+  }
 }
 
 // src/server/index.ts
@@ -258,7 +462,12 @@ function createDolphinHandler(opts) {
   };
 }
 export {
+  ClaudeLlm,
+  DolphinError,
+  MetaPagePublisher,
   VERSION,
-  createDolphinHandler
+  createDolphinHandler,
+  validateBrand,
+  validateGenerateRequest
 };
 //# sourceMappingURL=server.mjs.map
