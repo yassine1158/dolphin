@@ -394,6 +394,67 @@ function toLocalInput(d) {
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+// src/core/peak.ts
+var MIN_SAMPLES = 8;
+var DAYS = 7;
+var HOURS = 24;
+var weight = (s2) => s2.reactions + 2 * s2.comments + 3 * s2.shares;
+var mondayFirst = (d) => (d.getDay() + 6) % 7;
+function defaultGrid() {
+  const weekday = (h) => h >= 19 && h <= 21 ? 1 : h >= 12 && h <= 13 ? 0.8 : h === 18 || h === 22 ? 0.7 : h >= 7 && h <= 8 ? 0.5 : h >= 9 && h <= 17 ? 0.35 : 0.08;
+  const weekend = (h) => h >= 10 && h <= 12 ? 0.9 : h >= 17 && h <= 20 ? 0.85 : h >= 13 && h <= 16 ? 0.5 : h >= 8 && h <= 22 ? 0.3 : 0.06;
+  return Array.from({ length: DAYS }, (_, d) => Array.from({ length: HOURS }, (_2, h) => d >= 5 ? weekend(h) : weekday(h)));
+}
+function pickBest(grid) {
+  const cells = grid.flatMap((row, day) => row.map((score, hour) => ({ day, hour, score }))).sort((a, b) => b.score - a.score || a.day - b.day || a.hour - b.hour);
+  const best = [];
+  for (const c of cells) {
+    if (best.length === 3) break;
+    if (best.some((b) => b.day === c.day && Math.abs(b.hour - c.hour) < 3)) continue;
+    best.push(c);
+  }
+  return best;
+}
+function analyzePeaks(samples, minSamples = MIN_SAMPLES) {
+  const valid = samples.filter((s2) => !Number.isNaN(new Date(s2.createdTime).getTime()));
+  let grid;
+  let source = "page";
+  if (valid.length < minSamples) {
+    grid = defaultGrid();
+    source = "default";
+  } else {
+    const sum = Array.from({ length: DAYS }, () => new Array(HOURS).fill(0));
+    const count = Array.from({ length: DAYS }, () => new Array(HOURS).fill(0));
+    for (const s2 of valid) {
+      const d = new Date(s2.createdTime);
+      sum[mondayFirst(d)][d.getHours()] += weight(s2);
+      count[mondayFirst(d)][d.getHours()] += 1;
+    }
+    const avg = (d, h) => h < 0 || h >= HOURS || !count[d][h] ? 0 : sum[d][h] / count[d][h];
+    const raw = Array.from({ length: DAYS }, (_, d) => Array.from({ length: HOURS }, (_2, h) => avg(d, h) + 0.5 * avg(d, h - 1) + 0.5 * avg(d, h + 1)));
+    const max = Math.max(...raw.flat());
+    grid = raw.map((row) => row.map((v) => max > 0 ? v / max : 0));
+    if (max <= 0) {
+      grid = defaultGrid();
+      source = "default";
+    }
+  }
+  return {
+    source,
+    samples: valid.length,
+    grid,
+    best: pickBest(grid),
+    bestHourByDay: grid.map((row) => row.reduce((bi, v, h) => v > row[bi] ? h : bi, 0))
+  };
+}
+function planWithPeaks(count, start, report, everyDays = 1) {
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i * everyDays);
+    d.setHours(report.bestHourByDay[mondayFirst(d)] ?? 19, 0, 0, 0);
+    return d;
+  });
+}
+
 // src/core/cost.ts
 var MODEL_PRICING = {
   "claude-opus-5-5": { input: 4, output: 20, label: "Claude Opus 5.5" },
@@ -526,6 +587,9 @@ var HttpPublisher = class {
   verify() {
     return call(this.opts, "GET", "/v1/publisher");
   }
+  async history() {
+    return (await call(this.opts, "GET", "/v1/publisher/history")).samples;
+  }
 };
 
 // src/adapters/publish/meta.ts
@@ -554,6 +618,18 @@ var MetaPagePublisher = class {
     const url = `${this.base}?fields=name&access_token=${encodeURIComponent(this.opts.accessToken)}`;
     const data = await this.request(url, { method: "GET" });
     return { name: data.name ?? "" };
+  }
+  /** Last 100 published posts with their reactions, comments and shares (needs pages_read_engagement). */
+  async history() {
+    const fields = "created_time,shares,reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0)";
+    const url = `${this.base}/published_posts?fields=${encodeURIComponent(fields)}&limit=100&access_token=${encodeURIComponent(this.opts.accessToken)}`;
+    const data = await this.request(url, { method: "GET" });
+    return (data.data ?? []).filter((r) => r.created_time).map((r) => ({
+      createdTime: r.created_time,
+      reactions: r.reactions?.summary?.total_count ?? 0,
+      comments: r.comments?.summary?.total_count ?? 0,
+      shares: r.shares?.count ?? 0
+    }));
   }
   async request(url, init) {
     const f = this.opts.fetch ?? globalThis.fetch.bind(globalThis);
@@ -1184,6 +1260,7 @@ var DolphinStudio = class {
   newId;
   loaded = false;
   ideaList = [];
+  peakReport = null;
   ns;
   get brand() {
     return this.deps.brand;
@@ -1222,6 +1299,7 @@ var DolphinStudio = class {
       };
       this.posts = await read(this.key, []);
       this.ideaList = await read(`ideas:${this.ns}`, []);
+      this.peakReport = await read(`peaks:${this.ns}`, null);
       if (this.brandLocked) this.hasSavedBrand = true;
       else {
         const saved = await read(`brand:${this.ns}`, null);
@@ -1247,6 +1325,27 @@ var DolphinStudio = class {
     this.emit();
     return valid;
   }
+  get peaks() {
+    return this.peakReport;
+  }
+  /**
+   * Peak times from the page's own posts when the publisher can read them,
+   * otherwise (or when it fails) the general recommendation.
+   */
+  async peakTimes() {
+    let samples = [];
+    if (this.deps.publisher?.history) {
+      try {
+        samples = await this.deps.publisher.history();
+      } catch {
+        samples = [];
+      }
+    }
+    this.peakReport = analyzePeaks(samples);
+    await this.deps.store.set(`peaks:${this.ns}`, JSON.stringify(this.peakReport));
+    this.emit();
+    return this.peakReport;
+  }
   /** Reads the site through the model: a brand proposal (unless locked) and post ideas. */
   async analyze(snapshot) {
     if (!this.deps.llm) throw new DolphinError("not_configured", "No language model is connected.");
@@ -1270,7 +1369,7 @@ var DolphinStudio = class {
     const now = this.now();
     const start = opts.startDate ?? new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
     const drafts = result.drafts.slice(0, count);
-    const slots = planSchedule(drafts.length, start, opts.time, opts.everyDays);
+    const slots = opts.time === "auto" ? planWithPeaks(drafts.length, start, this.peakReport ?? await this.peakTimes(), opts.everyDays) : planSchedule(drafts.length, start, opts.time, opts.everyDays);
     const created = drafts.map((d, i) => ({
       ...d,
       id: this.newId(),
@@ -1354,6 +1453,20 @@ var DolphinStudio = class {
 
 // src/widget/i18n.ts
 var fr = {
+  peakTitle: "Meilleurs moments pour publier",
+  peakAnalyze: "Analyser ma page",
+  peakRefresh: "Mettre \xE0 jour",
+  peakBusy: "Analyse de la page\u2026",
+  peakIntro: "DOLPHin regarde quand vos publications pass\xE9es ont fait le plus de r\xE9actions, commentaires et partages, puis publie aux heures de pointe.",
+  peakFromPage: "Calcul\xE9 \xE0 partir de {n} publications de votre page.",
+  peakDefault: "Recommandation g\xE9n\xE9rale : pas assez de publications \xE0 analyser sur votre page pour l'instant.",
+  peakBest: "Heures de pointe",
+  peakLess: "moins",
+  peakMore: "plus d'engagement",
+  peakReady: "Heures de pointe calcul\xE9es.",
+  autoTime: "Publier aux heures de pointe (automatique)",
+  days: ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"],
+  hourShort: "{h} h",
   analyzed: "Site analys\xE9 : {n} id\xE9e(s) propos\xE9e(s).",
   site: "Votre site",
   siteIntro: "DOLPHin lit votre site pour comprendre votre activit\xE9, trouver votre logo et vos couleurs, puis proposer des id\xE9es de publications.",
@@ -1482,6 +1595,20 @@ var fr = {
   }
 };
 var en = {
+  peakTitle: "Best times to post",
+  peakAnalyze: "Analyze my page",
+  peakRefresh: "Update",
+  peakBusy: "Analyzing the page\u2026",
+  peakIntro: "DOLPHin looks at when your past posts got the most reactions, comments and shares, then publishes at peak times.",
+  peakFromPage: "Based on {n} posts from your page.",
+  peakDefault: "General recommendation: not enough posts to analyze on your page yet.",
+  peakBest: "Peak times",
+  peakLess: "less",
+  peakMore: "more engagement",
+  peakReady: "Peak times computed.",
+  autoTime: "Post at peak times (automatic)",
+  days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+  hourShort: "{h}:00",
   analyzed: "Website analyzed: {n} idea(s) suggested.",
   site: "Your website",
   siteIntro: "DOLPHin reads your website to understand your business, find your logo and colors, then suggest post ideas.",
@@ -1610,6 +1737,20 @@ var en = {
   }
 };
 var ar = {
+  peakTitle: "\u0623\u0641\u0636\u0644 \u0623\u0648\u0642\u0627\u062A \u0627\u0644\u0646\u0634\u0631",
+  peakAnalyze: "\u062A\u062D\u0644\u064A\u0644 \u0635\u0641\u062D\u062A\u064A",
+  peakRefresh: "\u062A\u062D\u062F\u064A\u062B",
+  peakBusy: "\u062C\u0627\u0631\u064D \u062A\u062D\u0644\u064A\u0644 \u0627\u0644\u0635\u0641\u062D\u0629\u2026",
+  peakIntro: "\u064A\u062F\u0631\u0633 DOLPHin \u0645\u062A\u0649 \u062D\u0635\u0644\u062A \u0645\u0646\u0634\u0648\u0631\u0627\u062A\u0643 \u0627\u0644\u0633\u0627\u0628\u0642\u0629 \u0639\u0644\u0649 \u0623\u0643\u0628\u0631 \u0639\u062F\u062F \u0645\u0646 \u0627\u0644\u062A\u0641\u0627\u0639\u0644\u0627\u062A \u0648\u0627\u0644\u062A\u0639\u0644\u064A\u0642\u0627\u062A \u0648\u0627\u0644\u0645\u0634\u0627\u0631\u0643\u0627\u062A\u060C \u062B\u0645 \u064A\u0646\u0634\u0631 \u0641\u064A \u0623\u0648\u0642\u0627\u062A \u0627\u0644\u0630\u0631\u0648\u0629.",
+  peakFromPage: "\u0645\u062D\u0633\u0648\u0628 \u0645\u0646 {n} \u0645\u0646\u0634\u0648\u0631\u064B\u0627 \u0645\u0646 \u0635\u0641\u062D\u062A\u0643.",
+  peakDefault: "\u062A\u0648\u0635\u064A\u0629 \u0639\u0627\u0645\u0629: \u0644\u0627 \u062A\u0648\u062C\u062F \u0645\u0646\u0634\u0648\u0631\u0627\u062A \u0643\u0627\u0641\u064A\u0629 \u0641\u064A \u0635\u0641\u062D\u062A\u0643 \u0644\u0644\u062A\u062D\u0644\u064A\u0644 \u0628\u0639\u062F.",
+  peakBest: "\u0623\u0648\u0642\u0627\u062A \u0627\u0644\u0630\u0631\u0648\u0629",
+  peakLess: "\u0623\u0642\u0644",
+  peakMore: "\u062A\u0641\u0627\u0639\u0644 \u0623\u0643\u062B\u0631",
+  peakReady: "\u062A\u0645 \u062D\u0633\u0627\u0628 \u0623\u0648\u0642\u0627\u062A \u0627\u0644\u0630\u0631\u0648\u0629.",
+  autoTime: "\u0627\u0644\u0646\u0634\u0631 \u0641\u064A \u0623\u0648\u0642\u0627\u062A \u0627\u0644\u0630\u0631\u0648\u0629 (\u062A\u0644\u0642\u0627\u0626\u064A)",
+  days: ["\u0627\u0644\u0625\u062B\u0646\u064A\u0646", "\u0627\u0644\u062B\u0644\u0627\u062B\u0627\u0621", "\u0627\u0644\u0623\u0631\u0628\u0639\u0627\u0621", "\u0627\u0644\u062E\u0645\u064A\u0633", "\u0627\u0644\u062C\u0645\u0639\u0629", "\u0627\u0644\u0633\u0628\u062A", "\u0627\u0644\u0623\u062D\u062F"],
+  hourShort: "\u0627\u0644\u0633\u0627\u0639\u0629 {h}",
   analyzed: "\u062A\u0645 \u062A\u062D\u0644\u064A\u0644 \u0627\u0644\u0645\u0648\u0642\u0639: {n} \u0641\u0643\u0631\u0629 \u0645\u0642\u062A\u0631\u062D\u0629.",
   site: "\u0645\u0648\u0642\u0639\u0643",
   siteIntro: "\u064A\u0642\u0631\u0623 DOLPHin \u0645\u0648\u0642\u0639\u0643 \u0644\u064A\u0641\u0647\u0645 \u0646\u0634\u0627\u0637\u0643 \u0648\u064A\u062C\u062F \u0634\u0639\u0627\u0631\u0643 \u0648\u0623\u0644\u0648\u0627\u0646\u0643\u060C \u062B\u0645 \u064A\u0642\u062A\u0631\u062D \u0623\u0641\u0643\u0627\u0631\u064B\u0627 \u0644\u0644\u0645\u0646\u0634\u0648\u0631\u0627\u062A.",
@@ -1835,9 +1976,39 @@ function ideasCard(t, ideas, busy, canAnalyze, canWrite) {
   return `<div class="card"><h3>${esc(t.ideas)}</h3>${ideas.length ? `<ul class="ideas">${list2}</ul>` : `<p class="hint">${esc(t.noIdeas)}</p>`}
     <div class="row"><button data-act="suggest"${busy || !canAnalyze ? " disabled" : ""}>${esc(busy ? t.suggesting : "\u2726 " + t.suggest)}</button></div></div>`;
 }
+var HEAT = ["#cde2fb", "#9ec5f4", "#5598e7", "#256abf", "#104281"];
+var BLOCKS = [6, 9, 12, 15, 18, 21];
+function peakCard(t, report, busy) {
+  const hour = (h) => t.hourShort.replace("{h}", String(h));
+  let body = `<p class="hint">${esc(t.peakIntro)}</p>`;
+  if (report) {
+    const cell = (d, from) => Math.max(...report.grid[d].slice(from, from + 3));
+    const rows = t.days.map((day, d) => `<div class="hm-row"><span class="hm-day">${esc(day.slice(0, 3))}</span>${BLOCKS.map((from) => {
+      const v = cell(d, from), step = Math.min(HEAT.length - 1, Math.floor(v * HEAT.length));
+      const label = `${day} ${hour(from)}\u2013${hour(from + 3)} : ${Math.round(v * 100)} %`;
+      return `<span class="hm-cell" style="background:${HEAT[step]}" title="${esc(label)}" aria-label="${esc(label)}" role="img"></span>`;
+    }).join("")}</div>`).join("");
+    body += `<p class="state ${report.source === "page" ? "ok" : "missing"}">${esc(report.source === "page" ? t.peakFromPage.replace("{n}", String(report.samples)) : t.peakDefault)}</p>
+      <div class="peaks"><div><h4>${esc(t.peakBest)}</h4><ol class="best">${report.best.map((b) => `<li><strong>${esc(t.days[b.day])}</strong> \xB7 ${esc(hour(b.hour))}</li>`).join("")}</ol></div>
+      <div class="hm" role="group" aria-label="${esc(t.peakTitle)}"><div class="hm-row hm-head"><span class="hm-day"></span>${BLOCKS.map((h) => `<span>${esc(hour(h))}</span>`).join("")}</div>${rows}
+      <div class="hm-legend"><span>${esc(t.peakLess)}</span>${HEAT.map((c) => `<i style="background:${c}"></i>`).join("")}<span>${esc(t.peakMore)}</span></div></div></div>`;
+  }
+  return `<div class="card"><h3>${esc(t.peakTitle)}</h3>${body}
+    <div class="row"><button data-act="peaks"${busy ? " disabled" : ""}>${esc(busy ? t.peakBusy : report ? t.peakRefresh : "\u23F1 " + t.peakAnalyze)}</button></div></div>`;
+}
 var PROFILE_STYLES = (
   /* css */
   `
+.peaks{display:grid;grid-template-columns:minmax(160px,220px) minmax(0,1fr);gap:20px;align-items:start;margin-bottom:12px}
+.best{margin:0;padding-inline-start:1.2em;display:grid;gap:4px}
+.hm{display:grid;gap:2px;font-size:.75rem;color:var(--d-muted)}
+.hm-row{display:grid;grid-template-columns:44px repeat(6,minmax(0,1fr));gap:2px;align-items:center}
+.hm-head span{text-align:center}
+.hm-cell{height:22px;border-radius:4px}
+.hm-legend{display:flex;align-items:center;gap:2px;margin-top:6px;justify-content:flex-end}
+.hm-legend i{width:18px;height:10px;border-radius:2px}
+.hm-legend span{margin:0 6px}
+@container (max-width:720px){.peaks{grid-template-columns:1fr}}
 .card h4{margin:16px 0 8px;font-size:.92rem;color:var(--d-primary)}
 .profile-sum{display:flex;gap:14px;align-items:center;margin-bottom:12px}
 .profile-sum p{margin:2px 0 0}
@@ -1897,6 +2068,9 @@ button.danger{background:transparent;color:var(--d-danger);border-color:color-mi
 button.danger[data-armed]{background:var(--d-danger);color:#fff}
 button.link{background:none;border:0;padding:4px 0;color:var(--d-muted);text-decoration:underline}
 button[disabled]{opacity:.55;cursor:progress}
+.check{display:flex;align-items:center;gap:10px;font-weight:600;cursor:pointer}
+.check input{width:18px;height:18px;accent-color:var(--d-primary)}
+.check>span{margin:0;font-size:.92rem}
 .state{font-weight:600;font-size:.9rem;margin:0 0 10px}
 .state.ok{color:var(--d-ok)}.state.missing{color:#a15c07}
 .hint{color:var(--d-muted);font-size:.85rem;margin:2px 0 12px}
@@ -1955,7 +2129,7 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
   view = "loading";
   busy = false;
   t = MESSAGES.fr;
-  prefs = { subject: "mix", tone: "warm", count: 5, start: "", time: "19:00", notes: "" };
+  prefs = { subject: "mix", tone: "warm", count: 5, start: "", time: "19:00", notes: "", auto: true };
   toastTimer;
   redraw = /* @__PURE__ */ new Map();
   /** Profile being reviewed before it is saved. */
@@ -2062,7 +2236,7 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
     else if (this.view === "setup" || this.view === "lock") body = this.lockView();
     else {
       const st = this.studio;
-      body = (this.cfg.showConnections === false ? "" : this.connectionsView()) + siteCard({ t: this.t, brand: st.brand, locked: st.brandLocked, saved: st.hasSavedBrand, draft: this.draft, logoCandidates: this.logoCandidates, siteUrl: this.siteUrl, busy: this.busy, canAnalyze: st.canGenerate }) + (this.ready ? ideasCard(this.t, st.ideas, this.busy, st.canGenerate, st.canGenerate) + this.generateView() + this.postsView() : "");
+      body = (this.cfg.showConnections === false ? "" : this.connectionsView()) + siteCard({ t: this.t, brand: st.brand, locked: st.brandLocked, saved: st.hasSavedBrand, draft: this.draft, logoCandidates: this.logoCandidates, siteUrl: this.siteUrl, busy: this.busy, canAnalyze: st.canGenerate }) + (this.ready ? ideasCard(this.t, st.ideas, this.busy, st.canGenerate, st.canGenerate) + peakCard(this.t, st.peaks, this.busy) + this.generateView() + this.postsView() : "");
     }
     this.root.innerHTML = `<style>${STYLES2}${PROFILE_STYLES}</style><div class="wrap">${head}<div class="toast" role="status" hidden></div>${body}</div>`;
     this.drawAll();
@@ -2100,7 +2274,8 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
       <label><span>${esc2(t.tone)}</span><select data-pref="tone">${opts(t.tones, p.tone)}</select></label>
       <label><span>${esc2(t.count)}</span><input type="number" min="1" max="10" data-pref="count" value="${p.count}"></label>
       <label><span>${esc2(t.startDate)}</span><input type="date" data-pref="start" value="${esc2(p.start)}"></label>
-      <label><span>${esc2(t.time)}</span><input type="time" data-pref="time" value="${esc2(p.time)}"></label></div>
+      <label><span>${esc2(t.time)}</span><input type="time" data-pref="time" value="${esc2(p.time)}"${p.auto ? " disabled" : ""}></label></div>
+      <label class="check"><input type="checkbox" data-pref="auto"${p.auto ? " checked" : ""}><span>\u23F1 ${esc2(t.autoTime)}</span></label>
       <label><span>${esc2(t.notes)}</span><textarea rows="2" data-pref="notes" placeholder="${esc2(t.notesPh)}">${esc2(p.notes)}</textarea></label>
       <p class="hint">${esc2(fill(t.costHint, { cost: usd(estimatePerPostUsd(this.model)) }))}</p>
       <div class="row"><button class="accent" data-act="generate"${this.busy || !this.studio.canGenerate ? " disabled" : ""}>${esc2(this.busy ? t.generating : "\u2726 " + t.generate)}</button></div></div>`;
@@ -2219,8 +2394,12 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
     }
     if (el.dataset.pref) {
       const k = el.dataset.pref;
-      this.prefs[k] = k === "count" ? Math.min(10, Math.max(1, Number.parseInt(el.value, 10) || 1)) : el.value;
+      this.prefs[k] = k === "auto" ? el.checked : k === "count" ? Math.min(10, Math.max(1, Number.parseInt(el.value, 10) || 1)) : el.value;
       await this.store.set("prefs", JSON.stringify(this.prefs));
+      if (k === "auto") {
+        const time = this.root.querySelector('[data-pref="time"]');
+        if (time) time.disabled = el.checked;
+      }
       return;
     }
     const f = el.dataset.f;
@@ -2314,6 +2493,15 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
         case "pick-logo":
           await this.pickLogo(Number(b.dataset.i));
           break;
+        case "peaks": {
+          this.busy = true;
+          this.render();
+          await studio.peakTimes();
+          this.busy = false;
+          this.render();
+          this.toast(this.t.peakReady, "success");
+          break;
+        }
         case "download":
           await this.download(id);
           break;
@@ -2385,7 +2573,7 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
       tone: TONES[p.tone] ?? TONES.warm,
       ...p.notes ? { notes: p.notes } : {},
       ...p.start ? { startDate: /* @__PURE__ */ new Date(p.start + "T00:00") } : {},
-      time: p.time
+      time: p.auto ? "auto" : p.time
     });
     this.busy = false;
     this.render();
@@ -2468,7 +2656,7 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
       tone: TONES[this.prefs.tone] ?? TONES.warm,
       notes: idea.why,
       ...this.prefs.start ? { startDate: /* @__PURE__ */ new Date(this.prefs.start + "T00:00") } : {},
-      time: this.prefs.time
+      time: this.prefs.auto ? "auto" : this.prefs.time
     });
     this.busy = false;
     this.render();
@@ -2533,6 +2721,7 @@ export {
   POSTER_WIDTH,
   POSTS_JSON_SCHEMA,
   Vault,
+  analyzePeaks,
   assertSchedulable,
   buildAnalyzePrompt,
   buildSystemPrompt,
@@ -2553,6 +2742,7 @@ export {
   parseDrafts,
   pickBrandColors,
   planSchedule,
+  planWithPeaks,
   snapshotFromDocument,
   validateBrand,
   validateGenerateRequest,

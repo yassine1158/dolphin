@@ -54,6 +54,18 @@ describe("MetaPagePublisher", () => {
     expect([f.get("message"), f.get("published"), f.get("unpublished_content_type"), f.get("scheduled_publish_time")])
       .toEqual(["hello", "false", "SCHEDULED", String(Math.floor(at.getTime() / 1000))]);
   });
+  it("reads the engagement of past posts", async () => {
+    let asked = "";
+    const pub = new MetaPagePublisher({ pageId: "1", accessToken: "t", fetch: (async (url: string) => { asked = url; return new Response(JSON.stringify({ data: [
+      { created_time: "2026-06-02T20:00:00+0000", shares: { count: 3 }, reactions: { summary: { total_count: 40 } }, comments: { summary: { total_count: 5 } } },
+      { created_time: "2026-06-03T09:00:00+0000" },
+    ] })); }) as typeof fetch });
+    expect(await pub.history()).toEqual([
+      { createdTime: "2026-06-02T20:00:00+0000", reactions: 40, comments: 5, shares: 3 },
+      { createdTime: "2026-06-03T09:00:00+0000", reactions: 0, comments: 0, shares: 0 },
+    ]);
+    expect(decodeURIComponent(asked)).toContain("/published_posts?fields=created_time,shares,reactions.summary(total_count).limit(0)");
+  });
   it("maps Graph errors", async () => {
     const pub = new MetaPagePublisher({ pageId: "1", accessToken: "t", fetch: (async () => new Response(JSON.stringify({ error: { code: 190, message: "expired" } }), { status: 400 })) as typeof fetch });
     await expect(pub.verify()).rejects.toMatchObject({ code: "auth" });

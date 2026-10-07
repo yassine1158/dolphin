@@ -97,5 +97,21 @@ describe("DolphinStudio", () => {
     const { studio } = make({ brandLocked: true });
     await expect(studio.setBrand(brand)).rejects.toMatchObject({ code: "invalid_request" });
   });
-});
 
+  it("schedules at the peak times of the page", async () => {
+    const { studio, publisher } = make();
+    // 10 posts on Tuesdays at 7 h with strong engagement: Tuesday's best hour becomes 7
+    publisher.historyRows = Array.from({ length: 10 }, (_, w) => ({ createdTime: new Date(2026, 4, 5 + 7 * w, 7).toISOString(), reactions: 90, comments: 0, shares: 0 }));
+    const report = await studio.peakTimes();
+    expect(report.source).toBe("page");
+    const { posts } = await studio.generate({ count: 2, time: "auto", startDate: new Date(2026, 5, 16) }); // Tuesday, Wednesday
+    expect(new Date(posts[0]!.scheduledAt).getHours()).toBe(7);
+    expect(new Date(posts[1]!.scheduledAt).getHours()).toBe(report.bestHourByDay[2]);
+  });
+
+  it("uses the general recommendation when the page cannot be read", async () => {
+    const { studio, publisher } = make();
+    publisher.history = async () => { throw new Error("no permission"); };
+    expect((await studio.peakTimes()).source).toBe("default");
+  });
+});

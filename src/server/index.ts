@@ -111,6 +111,11 @@ export function createDolphinHandler(opts: ServerOptions): Handler {
       return opts.publisher.publish({ image: new Blob([bytes], { type: "image/png" }), caption: body.caption, ...(scheduledAt ? { scheduledAt } : {}) });
     },
 
+    "GET /v1/publisher/history": async () => {
+      if (!opts.publisher?.history) throw new DolphinError("not_configured", "No publisher is configured on the server.");
+      return { samples: await opts.publisher.history() };
+    },
+
     "GET /v1/publisher": async () => {
       if (!opts.publisher?.verify) throw new DolphinError("not_configured", "No publisher is configured on the server.");
       return opts.publisher.verify();

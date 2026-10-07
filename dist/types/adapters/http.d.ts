@@ -1,3 +1,4 @@
+import type { EngagementSample } from "../core/peak.js";
 import type { AnalyzeResult, BrandProfile, GenerateRequest, GenerateResult, SiteSnapshot } from "../core/types.js";
 import type { LlmPort, PublishInput, PublisherPort } from "../ports/index.js";
 export interface HttpOptions {
@@ -23,4 +24,5 @@ export declare class HttpPublisher implements PublisherPort {
     verify(): Promise<{
         name: string;
     }>;
+    history(): Promise<EngagementSample[]>;
 }

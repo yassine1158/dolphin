@@ -5,7 +5,7 @@ info:
   description: |
     Contract between the <dolphin-studio> widget (proxy mode) and a server that holds the keys.
     The reference implementation is `dolphin-server` (Node). Any backend (PHP, Python, Java, Go, .NET…)
-    can implement these five routes to host DOLPHin.
+    can implement these six routes to host DOLPHin.
     Errors always have the shape `{ "error": { "code": ErrorCode, "message": string } }`.
 servers:
   - url: http://localhost:8787
@@ -90,6 +90,29 @@ paths:
           content:
             application/json:
               schema: { type: object, required: [id], properties: { id: { type: string } } }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/publisher/history:
+    get:
+      summary: Engagement of the page's recent posts (used to compute peak times)
+      responses:
+        "200":
+          description: Recent posts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [samples]
+                properties:
+                  samples:
+                    type: array
+                    items:
+                      type: object
+                      required: [createdTime, reactions, comments, shares]
+                      properties:
+                        createdTime: { type: string, format: date-time }
+                        reactions: { type: integer }
+                        comments: { type: integer }
+                        shares: { type: integer }
         default: { $ref: "#/components/responses/Error" }
   /v1/publisher:
     get:
