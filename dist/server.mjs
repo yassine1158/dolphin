@@ -486,6 +486,18 @@ var MetaPagePublisher = class {
     const data = await this.request(url, { method: "GET" });
     return { name: data.name ?? "" };
   }
+  /** Last 100 published posts with their reactions, comments and shares (needs pages_read_engagement). */
+  async history() {
+    const fields = "created_time,shares,reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0)";
+    const url = `${this.base}/published_posts?fields=${encodeURIComponent(fields)}&limit=100&access_token=${encodeURIComponent(this.opts.accessToken)}`;
+    const data = await this.request(url, { method: "GET" });
+    return (data.data ?? []).filter((r) => r.created_time).map((r) => ({
+      createdTime: r.created_time,
+      reactions: r.reactions?.summary?.total_count ?? 0,
+      comments: r.comments?.summary?.total_count ?? 0,
+      shares: r.shares?.count ?? 0
+    }));
+  }
   async request(url, init) {
     const f = this.opts.fetch ?? globalThis.fetch.bind(globalThis);
     let res;
@@ -601,6 +613,10 @@ function createDolphinHandler(opts) {
         if (Number.isNaN(scheduledAt.getTime())) throw new DolphinError("invalid_request", "scheduledAt must be an ISO date.");
       }
       return opts.publisher.publish({ image: new Blob([bytes], { type: "image/png" }), caption: body.caption, ...scheduledAt ? { scheduledAt } : {} });
+    },
+    "GET /v1/publisher/history": async () => {
+      if (!opts.publisher?.history) throw new DolphinError("not_configured", "No publisher is configured on the server.");
+      return { samples: await opts.publisher.history() };
     },
     "GET /v1/publisher": async () => {
       if (!opts.publisher?.verify) throw new DolphinError("not_configured", "No publisher is configured on the server.");

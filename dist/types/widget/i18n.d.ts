@@ -1,5 +1,19 @@
 import type { Lang } from "../core/types.js";
 declare const fr: {
+    peakTitle: string;
+    peakAnalyze: string;
+    peakRefresh: string;
+    peakBusy: string;
+    peakIntro: string;
+    peakFromPage: string;
+    peakDefault: string;
+    peakBest: string;
+    peakLess: string;
+    peakMore: string;
+    peakReady: string;
+    autoTime: string;
+    days: string[];
+    hourShort: string;
     analyzed: string;
     site: string;
     siteIntro: string;

@@ -6,6 +6,7 @@
  */
 import { DolphinError, type DolphinErrorCode } from "../core/errors.js";
 import { parseAnalysis } from "../core/analysis.js";
+import type { EngagementSample } from "../core/peak.js";
 import { parseDrafts } from "../core/schema.js";
 import type { AnalyzeResult, BrandProfile, GenerateRequest, GenerateResult, SiteSnapshot } from "../core/types.js";
 import type { LlmPort, PublishInput, PublisherPort } from "../ports/index.js";
@@ -69,5 +70,9 @@ export class HttpPublisher implements PublisherPort {
 
   verify(): Promise<{ name: string }> {
     return call<{ name: string }>(this.opts, "GET", "/v1/publisher");
+  }
+
+  async history(): Promise<EngagementSample[]> {
+    return (await call<{ samples: EngagementSample[] }>(this.opts, "GET", "/v1/publisher/history")).samples;
   }
 }

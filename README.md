@@ -74,12 +74,16 @@ Il n'est pas nécessaire de décrire la marque : sans `brand` dans la configurat
 
 Quand la marque vient du site hôte (`brand` fourni, comme dans un CMS), DOLPHin ne la modifie jamais : il propose seulement des idées.
 
+## Publication automatique aux heures de pointe
+
+DOLPHin lit les réactions, commentaires et partages des 100 dernières publications de la page (permission `pages_read_engagement`). Il en déduit les meilleures heures pour chaque jour de la semaine. Avec « Publier aux heures de pointe », activé par défaut, chaque publication de la série est programmée à l'heure de pointe de son jour, puis Facebook la publie tout seul. Si la page a moins de 8 publications, DOLPHin applique une recommandation générale : midi et soirée en semaine, fin de matinée le week-end.
+
 ## Pourquoi ça marche avec tous les sites
 
 | Couche | Ce qui la rend universelle |
 |---|---|
 | **Interface** | Web Component standard avec Shadow DOM : aucun conflit de CSS ou de JavaScript avec le site, aucun framework requis. Fonctionne en HTML simple, WordPress, PHP, Django, Rails, Laravel, React, Vue, Angular. |
-| **Serveur** | Contrat REST décrit dans [`openapi.yaml`](openapi.yaml), 5 routes. Utilisez `dolphin-server` (Node, sans dépendance de framework), placez-le derrière votre serveur actuel (nginx, Apache…), ou réimplémentez les 5 routes dans votre langage. |
+| **Serveur** | Contrat REST décrit dans [`openapi.yaml`](openapi.yaml), 6 routes. Utilisez `dolphin-server` (Node, sans dépendance de framework), placez-le derrière votre serveur actuel (nginx, Apache…), ou réimplémentez les 6 routes dans votre langage. |
 | **Langues** | Interface en français, anglais et arabe (de droite à gauche). Les publications sont écrites dans la langue de la marque. |
 
 Exemple nginx, pour servir DOLPHin sous le même domaine qu'un site PHP, Python ou autre :

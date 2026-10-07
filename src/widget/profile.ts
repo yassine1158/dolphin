@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 /** Markup of the "Your website" and "Post ideas" cards. Pure functions: state in, HTML out. */
+import type { PeakReport } from "../core/peak.js";
 import type { BrandProfile, PostIdea } from "../core/types.js";
 import type { Messages } from "./i18n.js";
 
@@ -71,7 +72,40 @@ export function ideasCard(t: Messages, ideas: readonly PostIdea[], busy: boolean
     <div class="row"><button data-act="suggest"${busy || !canAnalyze ? " disabled" : ""}>${esc(busy ? t.suggesting : "✦ " + t.suggest)}</button></div></div>`;
 }
 
+/** Sequential scale (one hue, light to dark) for the engagement heat map. */
+const HEAT = ["#cde2fb", "#9ec5f4", "#5598e7", "#256abf", "#104281"];
+const BLOCKS = [6, 9, 12, 15, 18, 21]; // 3-hour columns, 6 h to midnight
+
+export function peakCard(t: Messages, report: PeakReport | null, busy: boolean): string {
+  const hour = (h: number) => t.hourShort.replace("{h}", String(h));
+  let body = `<p class="hint">${esc(t.peakIntro)}</p>`;
+  if (report) {
+    const cell = (d: number, from: number) => Math.max(...report.grid[d]!.slice(from, from + 3));
+    const rows = t.days.map((day, d) => `<div class="hm-row"><span class="hm-day">${esc(day.slice(0, 3))}</span>${BLOCKS.map(from => {
+      const v = cell(d, from), step = Math.min(HEAT.length - 1, Math.floor(v * HEAT.length));
+      const label = `${day} ${hour(from)}–${hour(from + 3)} : ${Math.round(v * 100)} %`;
+      return `<span class="hm-cell" style="background:${HEAT[step]}" title="${esc(label)}" aria-label="${esc(label)}" role="img"></span>`;
+    }).join("")}</div>`).join("");
+    body += `<p class="state ${report.source === "page" ? "ok" : "missing"}">${esc(report.source === "page" ? t.peakFromPage.replace("{n}", String(report.samples)) : t.peakDefault)}</p>
+      <div class="peaks"><div><h4>${esc(t.peakBest)}</h4><ol class="best">${report.best.map(b => `<li><strong>${esc(t.days[b.day])}</strong> · ${esc(hour(b.hour))}</li>`).join("")}</ol></div>
+      <div class="hm" role="group" aria-label="${esc(t.peakTitle)}"><div class="hm-row hm-head"><span class="hm-day"></span>${BLOCKS.map(h => `<span>${esc(hour(h))}</span>`).join("")}</div>${rows}
+      <div class="hm-legend"><span>${esc(t.peakLess)}</span>${HEAT.map(c => `<i style="background:${c}"></i>`).join("")}<span>${esc(t.peakMore)}</span></div></div></div>`;
+  }
+  return `<div class="card"><h3>${esc(t.peakTitle)}</h3>${body}
+    <div class="row"><button data-act="peaks"${busy ? " disabled" : ""}>${esc(busy ? t.peakBusy : report ? t.peakRefresh : "⏱ " + t.peakAnalyze)}</button></div></div>`;
+}
+
 export const PROFILE_STYLES = /* css */ `
+.peaks{display:grid;grid-template-columns:minmax(160px,220px) minmax(0,1fr);gap:20px;align-items:start;margin-bottom:12px}
+.best{margin:0;padding-inline-start:1.2em;display:grid;gap:4px}
+.hm{display:grid;gap:2px;font-size:.75rem;color:var(--d-muted)}
+.hm-row{display:grid;grid-template-columns:44px repeat(6,minmax(0,1fr));gap:2px;align-items:center}
+.hm-head span{text-align:center}
+.hm-cell{height:22px;border-radius:4px}
+.hm-legend{display:flex;align-items:center;gap:2px;margin-top:6px;justify-content:flex-end}
+.hm-legend i{width:18px;height:10px;border-radius:2px}
+.hm-legend span{margin:0 6px}
+@container (max-width:720px){.peaks{grid-template-columns:1fr}}
 .card h4{margin:16px 0 8px;font-size:.92rem;color:var(--d-primary)}
 .profile-sum{display:flex;gap:14px;align-items:center;margin-bottom:12px}
 .profile-sum p{margin:2px 0 0}

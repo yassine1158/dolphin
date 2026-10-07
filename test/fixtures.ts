@@ -53,4 +53,6 @@ export class FakePublisher implements PublisherPort {
     return { id: `fb_${this.sent.length}` };
   }
   async verify() { return { name: "Page ACME" }; }
+  historyRows: { createdTime: string; reactions: number; comments: number; shares: number }[] = [];
+  async history() { return this.historyRows; }
 }

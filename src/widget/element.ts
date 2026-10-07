@@ -14,7 +14,7 @@ import { DEFAULT_COLORS } from "../render/colors.js";
 import { CanvasPosterRenderer, type PosterFonts } from "../render/poster.js";
 import { MESSAGES, fill, type Messages } from "./i18n.js";
 import { chooseLogo, logoFromFile } from "./logo.js";
-import { PROFILE_STYLES, ideasCard, siteCard } from "./profile.js";
+import { PROFILE_STYLES, ideasCard, peakCard, siteCard } from "./profile.js";
 import { MARK_SVG, STYLES } from "./styles.js";
 
 export interface DolphinConfig {
@@ -52,7 +52,7 @@ export interface DolphinConfig {
 export type DirectFactory = (secrets: StudioSecrets, config: DolphinConfig) => Pick<StudioDeps, "llm" | "publisher">;
 
 type View = "loading" | "setup" | "lock" | "main";
-interface Prefs { subject: string; tone: string; count: number; start: string; time: string; notes: string }
+interface Prefs { subject: string; tone: string; count: number; start: string; time: string; notes: string; auto: boolean }
 
 /** Instructions sent to the model for each subject / tone choice. */
 const SUBJECTS: Record<string, string> = {
@@ -95,7 +95,7 @@ export class DolphinStudioElement extends HTMLElement {
   private view: View = "loading";
   private busy = false;
   private t: Messages = MESSAGES.fr;
-  private prefs: Prefs = { subject: "mix", tone: "warm", count: 5, start: "", time: "19:00", notes: "" };
+  private prefs: Prefs = { subject: "mix", tone: "warm", count: 5, start: "", time: "19:00", notes: "", auto: true };
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
   private redraw = new Map<string, ReturnType<typeof setTimeout>>();
   /** Profile being reviewed before it is saved. */
@@ -195,7 +195,7 @@ export class DolphinStudioElement extends HTMLElement {
       const st = this.studio!;
       body = (this.cfg!.showConnections === false ? "" : this.connectionsView())
         + siteCard({ t: this.t, brand: st.brand, locked: st.brandLocked, saved: st.hasSavedBrand, draft: this.draft, logoCandidates: this.logoCandidates, siteUrl: this.siteUrl, busy: this.busy, canAnalyze: st.canGenerate })
-        + (this.ready ? ideasCard(this.t, st.ideas, this.busy, st.canGenerate, st.canGenerate) + this.generateView() + this.postsView() : "");
+        + (this.ready ? ideasCard(this.t, st.ideas, this.busy, st.canGenerate, st.canGenerate) + peakCard(this.t, st.peaks, this.busy) + this.generateView() + this.postsView() : "");
     }
     this.root.innerHTML = `<style>${STYLES}${PROFILE_STYLES}</style><div class="wrap">${head}<div class="toast" role="status" hidden></div>${body}</div>`;
     this.drawAll();
@@ -236,7 +236,8 @@ export class DolphinStudioElement extends HTMLElement {
       <label><span>${esc(t.tone)}</span><select data-pref="tone">${opts(t.tones, p.tone)}</select></label>
       <label><span>${esc(t.count)}</span><input type="number" min="1" max="10" data-pref="count" value="${p.count}"></label>
       <label><span>${esc(t.startDate)}</span><input type="date" data-pref="start" value="${esc(p.start)}"></label>
-      <label><span>${esc(t.time)}</span><input type="time" data-pref="time" value="${esc(p.time)}"></label></div>
+      <label><span>${esc(t.time)}</span><input type="time" data-pref="time" value="${esc(p.time)}"${p.auto ? " disabled" : ""}></label></div>
+      <label class="check"><input type="checkbox" data-pref="auto"${p.auto ? " checked" : ""}><span>⏱ ${esc(t.autoTime)}</span></label>
       <label><span>${esc(t.notes)}</span><textarea rows="2" data-pref="notes" placeholder="${esc(t.notesPh)}">${esc(p.notes)}</textarea></label>
       <p class="hint">${esc(fill(t.costHint, { cost: usd(estimatePerPostUsd(this.model)) }))}</p>
       <div class="row"><button class="accent" data-act="generate"${this.busy || !this.studio!.canGenerate ? " disabled" : ""}>${esc(this.busy ? t.generating : "✦ " + t.generate)}</button></div></div>`;
@@ -350,8 +351,10 @@ export class DolphinStudioElement extends HTMLElement {
     }
     if (el.dataset.pref) {
       const k = el.dataset.pref as keyof Prefs;
-      (this.prefs as unknown as Record<string, string | number>)[k] = k === "count" ? Math.min(10, Math.max(1, Number.parseInt(el.value, 10) || 1)) : el.value;
+      (this.prefs as unknown as Record<string, string | number | boolean>)[k] = k === "auto" ? el.checked
+        : k === "count" ? Math.min(10, Math.max(1, Number.parseInt(el.value, 10) || 1)) : el.value;
       await this.store!.set("prefs", JSON.stringify(this.prefs));
+      if (k === "auto") { const time = this.root.querySelector<HTMLInputElement>('[data-pref="time"]'); if (time) time.disabled = el.checked; }
       return;
     }
     const f = el.dataset.f;
@@ -399,6 +402,13 @@ export class DolphinStudioElement extends HTMLElement {
         case "del-product": this.draft?.products.splice(Number(b.dataset.i), 1); this.render(); break;
         case "no-logo": if (this.draft) { delete this.draft.logoUrl; delete this.draft.logoOnDarkUrl; } this.render(); break;
         case "pick-logo": await this.pickLogo(Number(b.dataset.i)); break;
+        case "peaks": {
+          this.busy = true; this.render();
+          await studio.peakTimes();
+          this.busy = false; this.render();
+          this.toast(this.t.peakReady, "success");
+          break;
+        }
         case "download": await this.download(id); break;
         case "copy": await navigator.clipboard.writeText(studio.caption(id)); this.toast(this.t.copied, "success"); break;
         case "remove": await studio.remove(id); this.render(); break;
@@ -450,7 +460,7 @@ export class DolphinStudioElement extends HTMLElement {
       tone: TONES[p.tone] ?? TONES.warm!,
       ...(p.notes ? { notes: p.notes } : {}),
       ...(p.start ? { startDate: new Date(p.start + "T00:00") } : {}),
-      time: p.time,
+      time: p.auto ? "auto" : p.time,
     });
     this.busy = false; this.render();
     this.toast(fill(this.t.generated, { n: posts.length, cost: usd(estimateCostUsd(usage, model)) }), "success");
@@ -527,7 +537,7 @@ export class DolphinStudioElement extends HTMLElement {
       tone: TONES[this.prefs.tone] ?? TONES.warm!,
       notes: idea.why,
       ...(this.prefs.start ? { startDate: new Date(this.prefs.start + "T00:00") } : {}),
-      time: this.prefs.time,
+      time: this.prefs.auto ? "auto" : this.prefs.time,
     });
     this.busy = false; this.render();
     this.toast(fill(this.t.generated, { n: posts.length, cost: usd(estimateCostUsd(usage, model)) }), "success");
