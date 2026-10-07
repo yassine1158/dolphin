@@ -45,6 +45,8 @@ export interface DolphinConfig {
    */
   secrets?: StudioSecrets;
   onSecretsChange?: (secrets: StudioSecrets) => void | Promise<void>;
+  /** Show the "Connections" card (keys, Facebook page). Default: true. */
+  showConnections?: boolean;
 }
 
 export type DirectFactory = (secrets: StudioSecrets, config: DolphinConfig) => Pick<StudioDeps, "llm" | "publisher">;
@@ -191,7 +193,7 @@ export class DolphinStudioElement extends HTMLElement {
     else if (this.view === "setup" || this.view === "lock") body = this.lockView();
     else {
       const st = this.studio!;
-      body = this.connectionsView()
+      body = (this.cfg!.showConnections === false ? "" : this.connectionsView())
         + siteCard({ t: this.t, brand: st.brand, locked: st.brandLocked, saved: st.hasSavedBrand, draft: this.draft, logoCandidates: this.logoCandidates, siteUrl: this.siteUrl, busy: this.busy, canAnalyze: st.canGenerate })
         + (this.ready ? ideasCard(this.t, st.ideas, this.busy, st.canGenerate, st.canGenerate) + this.generateView() + this.postsView() : "");
     }
