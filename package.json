@@ -6,21 +6,36 @@
   "private": true,
   "license": "UNLICENSED",
   "author": "Yassine Chaabane",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=22.9"
+  },
   "main": "./dist/dolphin.esm.js",
   "types": "./dist/types/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/types/index.d.ts", "import": "./dist/dolphin.esm.js" },
-    "./server": { "types": "./dist/types/server/index.d.ts", "import": "./dist/server.mjs" }
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/dolphin.esm.js"
+    },
+    "./server": {
+      "types": "./dist/types/server/index.d.ts",
+      "import": "./dist/server.mjs"
+    }
   },
-  "bin": { "dolphin-server": "./dist/server-cli.mjs" },
-  "files": ["dist", "openapi.yaml", "README.md"],
+  "bin": {
+    "dolphin-server": "./dist/server-cli.mjs"
+  },
+  "files": [
+    "dist",
+    "openapi.yaml",
+    "README.md"
+  ],
   "scripts": {
     "build": "node scripts/build.mjs && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "e2e": "node scripts/e2e.mjs",
-    "check": "npm run typecheck && npm test && npm run build && npm run e2e"
+    "check": "npm run typecheck && npm test && npm run build && npm run e2e",
+    "demo": "npm run build && node --env-file-if-exists=.env scripts/demo.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.131.0"
