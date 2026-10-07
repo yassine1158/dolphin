@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 import Anthropic from "@anthropic-ai/sdk";
 import { DEFAULT_MODEL } from "../../core/cost.js";
 import { ANALYSIS_JSON_SCHEMA, buildAnalyzePrompt, parseAnalysis } from "../../core/analysis.js";

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 import { DolphinError } from "./errors.js";
 
 /** Meta accepts scheduled posts between 10 minutes and 30 days ahead. */

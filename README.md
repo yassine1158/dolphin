@@ -1,5 +1,7 @@
 # DOLPHin 🐬 · studio IA intégrable
 
+[![CI](https://github.com/yassine1158/dolphin/actions/workflows/ci.yml/badge.svg)](https://github.com/yassine1158/dolphin/actions/workflows/ci.yml) [![Licence : AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue)](LICENSE) [![Licence commerciale](https://img.shields.io/badge/licence-commerciale-orange)](COMMERCIAL-LICENSE.md)
+
 DOLPHin écrit les publications d'une entreprise, dessine l'affiche à ses couleurs, puis la publie ou la programme sur sa page Facebook. Il s'installe sur **n'importe quel site web**, quel que soit le langage du serveur : il suffit d'une balise `<script>` et d'un composant `<dolphin-studio>`.
 
 > Statut : **bêta, en phase de test** (v0.3.0).
@@ -147,7 +149,12 @@ Variables du serveur : voir l'en-tête de [`src/server/cli.ts`](src/server/cli.t
 
 ## Licence
 
-DOLPHin est un **logiciel propriétaire : tous droits réservés** (voir [LICENSE](LICENSE)). Toute utilisation, sur n'importe quel site, demande un contrat de licence écrit. Les logiciels libres inclus, dont le SDK Claude sous licence MIT, sont listés dans [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+DOLPHin est **open source sous [GNU AGPL-3.0](LICENSE)**, avec une **[licence commerciale](COMMERCIAL-LICENSE.md)** au choix (double licence) :
+
+- **AGPL-3.0, gratuite** : vous pouvez utiliser, modifier et redistribuer DOLPHin. Si vous le modifiez et qu'on l'utilise à travers un réseau (un site, un service en ligne), vous devez publier le code source de votre version sous AGPL-3.0.
+- **Licence commerciale** : pour l'intégrer sans publier votre code, le revendre à vos clients (agence, hébergeur, SaaS, marque blanche) ou obtenir support et garantie.
+
+Pour contribuer, voir [CONTRIBUTING.md](CONTRIBUTING.md) : un [CLA](CLA.md) est demandé. Les logiciels libres inclus, dont le SDK Claude (MIT), sont listés dans [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
 ---
 

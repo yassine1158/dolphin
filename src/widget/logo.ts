@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 /** Logo helpers for the browser: load, keep as a data URL, read the brand colors. */
 import type { BrandColors } from "../core/types.js";
 import { DEFAULT_COLORS, colorsFromImage } from "../render/colors.js";

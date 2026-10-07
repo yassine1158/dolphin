@@ -4,7 +4,7 @@
   "description": "DOLPHin : moteur de contenu marketing IA intégrable à n'importe quel site web (génération, affiche, publication Meta).",
   "type": "module",
   "private": true,
-  "license": "SEE LICENSE IN LICENSE",
+  "license": "AGPL-3.0-only",
   "author": "Yassine Chaabane",
   "engines": {
     "node": ">=22.9"
@@ -25,6 +25,7 @@
     "dolphin-server": "./dist/server-cli.mjs"
   },
   "files": [
+    "COMMERCIAL-LICENSE.md",
     "LICENSE",
     "README.md",
     "THIRD-PARTY-NOTICES.md",
