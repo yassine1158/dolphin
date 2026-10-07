@@ -4,6 +4,22 @@ DOLPHin écrit les publications d'une entreprise, dessine l'affiche à ses coule
 
 > Statut : **bêta, en phase de test** (v0.1.0).
 
+## Essayer en 2 minutes (sur votre ordinateur)
+
+1. Installez **Node.js 22** ou plus récent : https://nodejs.org
+2. Téléchargez le projet (bouton vert **Code → Download ZIP** sur GitHub, puis dézippez), ou bien `git clone https://github.com/yassine1158/dolphin`.
+3. Dans le dossier, copiez `.env.example` en `.env`, puis collez votre clé Claude (`ANTHROPIC_API_KEY=sk-ant-…`). Les lignes `META_*` sont optionnelles : elles servent à publier sur Facebook.
+4. Ouvrez un terminal dans le dossier et lancez :
+
+   ```bash
+   npm install
+   npm run demo
+   ```
+
+5. Ouvrez **http://localhost:8787** : cliquez sur « Générer les publications ».
+
+Sans les lignes `META_*`, vous pouvez générer, modifier, télécharger les affiches et copier les textes. Avec elles, les boutons « Programmer » et « Publier maintenant » apparaissent.
+
 ## Intégration en 3 étapes
 
 ```html
@@ -94,6 +110,7 @@ npm run typecheck   # TypeScript strict
 npm test            # 31 tests unitaires (cœur, adaptateurs, serveur)
 npm run build       # dist/: dolphin.js, dolphin.lite.js, dolphin.esm.js, server.mjs, types
 npm run e2e         # navigateur réel : mode proxy, mode direct, arabe (nécessite Playwright)
+npm run demo        # démo locale avec vos vraies clés (.env)
 ```
 
 Variables du serveur : voir l'en-tête de [`src/server/cli.ts`](src/server/cli.ts).

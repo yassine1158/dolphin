@@ -18,4 +18,7 @@ export interface ServerOptions {
 }
 type Handler = (req: IncomingMessage, res: ServerResponse) => Promise<void>;
 export declare function createDolphinHandler(opts: ServerOptions): Handler;
-export {};
+export { ClaudeLlm, type ClaudeLlmOptions } from "../adapters/llm/claude.js";
+export { MetaPagePublisher, type MetaPageOptions } from "../adapters/publish/meta.js";
+export { validateBrand, validateGenerateRequest } from "../core/brand.js";
+export { DolphinError } from "../core/errors.js";

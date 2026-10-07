@@ -132,3 +132,9 @@ export function createDolphinHandler(opts: ServerOptions): Handler {
     }
   };
 }
+
+// Server-side building blocks, so Node hosts can assemble their own server from one import.
+export { ClaudeLlm, type ClaudeLlmOptions } from "../adapters/llm/claude.js";
+export { MetaPagePublisher, type MetaPageOptions } from "../adapters/publish/meta.js";
+export { validateBrand, validateGenerateRequest } from "../core/brand.js";
+export { DolphinError } from "../core/errors.js";
