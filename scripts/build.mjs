@@ -3,7 +3,7 @@ import { build } from "esbuild";
 import { rmSync } from "node:fs";
 
 rmSync("dist", { recursive: true, force: true });
-const banner = { js: "/*! DOLPHin 0.3.0 · (c) Yassine Chaabane */" };
+const banner = { js: "/*! DOLPHin 0.3.0 · (c) 2026 Yassine Chaabane · Licence propriétaire, tous droits réservés · Logiciels tiers : THIRD-PARTY-NOTICES.md */" };
 const common = { bundle: true, sourcemap: true, target: "es2022", legalComments: "eof", logLevel: "info" };
 
 await Promise.all([

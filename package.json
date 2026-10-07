@@ -4,7 +4,7 @@
   "description": "DOLPHin : moteur de contenu marketing IA intégrable à n'importe quel site web (génération, affiche, publication Meta).",
   "type": "module",
   "private": true,
-  "license": "UNLICENSED",
+  "license": "SEE LICENSE IN LICENSE",
   "author": "Yassine Chaabane",
   "engines": {
     "node": ">=22.9"
@@ -25,9 +25,11 @@
     "dolphin-server": "./dist/server-cli.mjs"
   },
   "files": [
+    "LICENSE",
+    "README.md",
+    "THIRD-PARTY-NOTICES.md",
     "dist",
-    "openapi.yaml",
-    "README.md"
+    "openapi.yaml"
   ],
   "scripts": {
     "build": "node scripts/build.mjs && tsc -p tsconfig.build.json",
