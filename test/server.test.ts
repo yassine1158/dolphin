@@ -57,9 +57,13 @@ describe("server", () => {
     publisher.historyRows = [{ createdTime: "2026-06-02T20:00:00Z", reactions: 1, comments: 0, shares: 0 }];
     expect(await new HttpPublisher({ endpoint: url, token: "secret-token" }).history()).toEqual(publisher.historyRows);
   });
-  it("rejects non-PNG images", async () => {
+  it("accepts PNG or JPEG only, typed from the bytes", async () => {
     const r = await post("/v1/publish", { imageBase64: Buffer.from("GIF89a").toString("base64"), caption: "x" });
-    expect((await r.json()).error.message).toMatch(/PNG/);
+    expect((await r.json()).error.message).toMatch(/PNG or JPEG/);
+    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
+    const ok = await post("/v1/publish", { imageBase64: jpeg.toString("base64"), caption: "photo" });
+    expect(ok.status).toBe(200);
+    expect(publisher.sent.at(-1)!.image.type).toBe("image/jpeg");
   });
   it("handles CORS for allowed origins only", async () => {
     const ok = await fetch(url + "/v1/generate", { method: "OPTIONS", headers: { origin: "https://shop.example" } });

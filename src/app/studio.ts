@@ -156,8 +156,9 @@ export class DolphinStudio {
     const samples = page.length && file.length ? mergeSources(page, file) : page.length ? page : file;
     const from = page.length && file.length ? "mixed" : page.length ? "page" : "import";
     this.peakReport = analyzePeaks(samples, undefined, from);
-    // an undated ads report repeats each hour on every day: day insights would be meaningless
-    this.insightsReport = samples.length ? analyzeInsights(page.length || !this.imported?.undated ? samples : [], this.now()) : null;
+    // an undated ads report repeats each hour on every day: it helps the hours, never the day insights
+    const forInsights = this.imported?.undated ? page : samples;
+    this.insightsReport = samples.length ? analyzeInsights(forInsights, this.now()) : null;
     await this.deps.store.set(`peaks:${this.ns}`, JSON.stringify(this.peakReport));
     await this.deps.store.set(`insights:${this.ns}`, JSON.stringify(this.insightsReport));
     this.emit();

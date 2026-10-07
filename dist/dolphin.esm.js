@@ -1,4 +1,4 @@
-/*! DOLPHin 0.4.0 · (c) 2026 Yassine Chaabane · SPDX-License-Identifier: AGPL-3.0-only · Licence commerciale : COMMERCIAL-LICENSE.md · Logiciels tiers : THIRD-PARTY-NOTICES.md */
+/*! DOLPHin 0.5.0 · (c) 2026 Yassine Chaabane · SPDX-License-Identifier: AGPL-3.0-only · Licence commerciale : COMMERCIAL-LICENSE.md · Logiciels tiers : THIRD-PARTY-NOTICES.md */
 
 // src/core/errors.ts
 var DolphinError = class extends Error {
@@ -28,6 +28,7 @@ var HTTP_STATUS = {
   too_long: 422,
   schedule_window: 400,
   not_configured: 501,
+  storage_full: 507,
   unknown: 500
 };
 
@@ -779,7 +780,7 @@ var POSTER_SIZES = {
   story: { width: 1080, height: 1920 }
 };
 var FORMATS = Object.keys(POSTER_SIZES);
-var LAYOUTS = ["classic", "centered", "minimal"];
+var LAYOUTS = ["classic", "centered", "minimal", "split"];
 var THEMES2 = ["dark", "light", "accent"];
 var STYLES2 = ["checks", "steps"];
 var STATUSES = ["draft", "scheduled", "published", "failed"];
@@ -1122,6 +1123,8 @@ var LocalStore = class {
   }
   prefix;
   fallback = new MemoryStore();
+  /** Keys whose last write did not reach localStorage: their stored value is stale. */
+  memoryOnly = /* @__PURE__ */ new Set();
   ls() {
     try {
       return globalThis.localStorage ?? null;
@@ -1130,17 +1133,23 @@ var LocalStore = class {
     }
   }
   async get(key) {
-    try {
-      const v = this.ls()?.getItem(this.prefix + key);
-      if (v != null) return v;
-    } catch {
+    if (!this.memoryOnly.has(key)) {
+      try {
+        const v = this.ls()?.getItem(this.prefix + key);
+        if (v != null) return v;
+      } catch {
+      }
     }
     return this.fallback.get(key);
   }
   async set(key, value) {
     try {
-      this.ls()?.setItem(this.prefix + key, value);
+      const ls = this.ls();
+      if (!ls) throw new Error("no storage");
+      ls.setItem(this.prefix + key, value);
+      this.memoryOnly.delete(key);
     } catch {
+      this.memoryOnly.add(key);
     }
     await this.fallback.set(key, value);
   }
@@ -1149,7 +1158,92 @@ var LocalStore = class {
       this.ls()?.removeItem(this.prefix + key);
     } catch {
     }
+    this.memoryOnly.delete(key);
     await this.fallback.delete(key);
+  }
+};
+var DB = "dolphin";
+var STORE = "kv";
+var IdbStore = class {
+  constructor(prefix = "dolphin:", name = DB) {
+    this.prefix = prefix;
+    this.name = name;
+    this.legacy = new LocalStore(prefix);
+  }
+  prefix;
+  name;
+  legacy;
+  db;
+  open() {
+    const attempt = (version) => new Promise((resolve) => {
+      try {
+        const req = version ? globalThis.indexedDB?.open(this.name, version) : globalThis.indexedDB?.open(this.name);
+        if (!req) {
+          resolve(null);
+          return;
+        }
+        req.onupgradeneeded = () => {
+          if (!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE);
+        };
+        req.onsuccess = () => {
+          const db = req.result;
+          if (db.objectStoreNames.contains(STORE)) {
+            db.onversionchange = () => db.close();
+            resolve(db);
+            return;
+          }
+          const next = db.version + 1;
+          db.close();
+          if (version) resolve(null);
+          else void attempt(next).then(resolve);
+        };
+        req.onerror = () => resolve(null);
+        req.onblocked = () => resolve(null);
+      } catch {
+        resolve(null);
+      }
+    });
+    this.db ??= attempt();
+    return this.db;
+  }
+  run(db, mode, fn) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, mode);
+      const req = fn(tx.objectStore(STORE));
+      tx.oncomplete = () => resolve(req.result);
+      tx.onerror = () => reject(tx.error ?? req.error);
+      tx.onabort = () => reject(tx.error ?? new Error("aborted"));
+    });
+  }
+  async get(key) {
+    const db = await this.open();
+    if (!db) return this.legacy.get(key);
+    const v = await this.run(db, "readonly", (s2) => s2.get(this.prefix + key)).catch(() => void 0);
+    if (typeof v === "string") return v;
+    const old = await this.legacy.get(key);
+    if (old != null) {
+      try {
+        await this.run(db, "readwrite", (s2) => s2.put(old, this.prefix + key));
+        await this.legacy.delete(key);
+      } catch {
+      }
+    }
+    return old;
+  }
+  async set(key, value) {
+    const db = await this.open();
+    if (!db) return this.legacy.set(key, value);
+    try {
+      await this.run(db, "readwrite", (s2) => s2.put(value, this.prefix + key));
+    } catch (err) {
+      if (err?.name === "QuotaExceededError") throw new DolphinError("storage_full", "The browser storage is full.");
+      throw err;
+    }
+  }
+  async delete(key) {
+    const db = await this.open();
+    if (db) await this.run(db, "readwrite", (s2) => s2.delete(this.prefix + key)).catch(() => void 0);
+    await this.legacy.delete(key);
   }
 };
 
@@ -1405,6 +1499,7 @@ function paletteFor(colors, theme) {
 }
 
 // src/render/poster.ts
+var MAX_UPLOAD_BYTES = 39e5;
 var POSTER_WIDTH = 1080;
 var POSTER_HEIGHT = 1350;
 var DEFAULT_FONTS = {
@@ -1435,20 +1530,28 @@ function wrapText(ctx, text2, maxWidth) {
 function photoPalette(T) {
   return { ...T, fg: "#ffffff", tagBg: "rgba(0,0,0,.35)", tagFg: "#ffffff", tagLine: "rgba(255,255,255,.55)", logo: "plate" };
 }
-function cover(ctx, img, W, H) {
+function cover(ctx, img, W, H, top = 0) {
   const [iw, ih] = sizeOf2(img);
   const k = Math.max(W / iw, H / ih), w = iw * k, h = ih * k;
-  ctx.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, top, W, H);
+  ctx.clip();
+  ctx.drawImage(img, (W - w) / 2, top + (H - h) / 2, w, h);
+  ctx.restore();
 }
 function drawPoster(ctx, post, brand, assets = {}) {
   const { width: W, height: H } = sizeOf(post.design);
   const M = 80, BAR2 = 170, MAXW = W - 2 * M;
   const layout = post.design?.layout ?? "classic";
   const centered = layout === "centered";
+  const split = layout === "split";
+  const band = split ? Math.round(H * (H >= 1800 ? 0.5 : H <= 1100 ? 0.4 : 0.45)) : 0;
   const F = assets.fonts ?? DEFAULT_FONTS;
   const photo = assets.photo ?? null;
   const base = paletteFor(brand.colors, post.theme);
-  const T = photo ? photoPalette(base) : base;
+  const T = photo && !split ? photoPalette(base) : base;
+  const onBand = photoPalette(base);
   const rtl = brand.language === "ar";
   const x = (v, w = 0) => rtl ? W - v - w : v;
   const start = centered ? "center" : rtl ? "right" : "left";
@@ -1457,7 +1560,29 @@ function drawPoster(ctx, post, brand, assets = {}) {
   ctx.direction = rtl ? "rtl" : "ltr";
   ctx.fillStyle = T.bg;
   ctx.fillRect(0, 0, W, H);
-  if (photo) {
+  if (split) {
+    if (photo) {
+      cover(ctx, photo, W, band);
+      const g = ctx.createLinearGradient(0, 0, 0, band);
+      g.addColorStop(0, "rgba(0,0,0,.35)");
+      g.addColorStop(0.35, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, band);
+    } else {
+      const g = ctx.createLinearGradient(0, 0, W, band);
+      g.addColorStop(0, brand.colors.accent);
+      g.addColorStop(1, brand.colors.primary);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, band);
+      const r = ctx.createRadialGradient(x(W * 0.85), band * 0.2, 0, x(W * 0.85), band * 0.2, W * 0.6);
+      r.addColorStop(0, "rgba(255,255,255,.28)");
+      r.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = r;
+      ctx.fillRect(0, 0, W, band);
+    }
+    ctx.fillStyle = base.accent === base.bg ? base.fg : brand.colors.accent;
+    ctx.fillRect(0, band - 8, W, 8);
+  } else if (photo) {
     cover(ctx, photo, W, H);
     const k = post.design?.overlay ?? 0.55;
     const g = ctx.createLinearGradient(0, 0, 0, H);
@@ -1483,37 +1608,48 @@ function drawPoster(ctx, post, brand, assets = {}) {
   let lw = 0;
   if (assets.logo && !post.design?.hideLogo) {
     const [iw, ih] = sizeOf2(assets.logo);
-    lw = Math.min(lh * iw / ih, 420);
-    if (T.logo === "plate" || assets.logoPlate) {
+    if (split && !photo) {
+      const bh = Math.min(band * 0.46, 300), bw = Math.min(bh * iw / ih, W - 4 * M);
+      const bx = (W - bw) / 2, by2 = (band - bh) / 2 + 20;
       ctx.fillStyle = "#ffffff";
       ctx.beginPath();
-      ctx.roundRect(x(M - 20, lw + 40), 60, lw + 40, lh + 24, 26);
+      ctx.roundRect(bx - 36, by2 - 30, bw + 72, bh + 60, 40);
       ctx.fill();
+      ctx.drawImage(assets.logo, bx, by2, bw, bh);
+    } else {
+      lw = Math.min(lh * iw / ih, 420);
+      if (split || T.logo === "plate" || assets.logoPlate) {
+        ctx.fillStyle = "#ffffff";
+        ctx.beginPath();
+        ctx.roundRect(x(M - 20, lw + 40), 60, lw + 40, lh + 24, 26);
+        ctx.fill();
+      }
+      ctx.drawImage(assets.logo, x(M, lw), 72, lw, lh);
     }
-    ctx.drawImage(assets.logo, x(M, lw), 72, lw, lh);
   }
   if (post.tag) {
+    const P = split ? onBand : T;
     ctx.font = `700 26px ${F.display}`;
     const label = post.tag.toUpperCase();
     const tw = Math.min(ctx.measureText(label).width + 56, W - 2 * M - lw - 40);
     const tx = x(W - M - tw, tw), ty = 72 + lh / 2 - 30;
-    ctx.fillStyle = T.tagBg;
+    ctx.fillStyle = P.tagBg;
     ctx.beginPath();
     ctx.roundRect(tx, ty, tw, 60, 30);
     ctx.fill();
-    if (T.tagLine) {
-      ctx.strokeStyle = T.tagLine;
+    if (P.tagLine) {
+      ctx.strokeStyle = P.tagLine;
       ctx.lineWidth = 2;
       ctx.stroke();
     }
-    ctx.fillStyle = T.tagFg;
+    ctx.fillStyle = P.tagFg;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(label, tx + tw / 2, ty + 31, tw - 40);
   }
   const points = layout === "minimal" ? [] : post.points.filter(Boolean).slice(0, 6);
   const big = layout === "minimal" ? 1.3 : 1;
-  const top = H >= 1800 ? 380 : H <= 1100 ? 250 : 290, bottom = H - BAR2 - (H >= 1800 ? 120 : 50);
+  const top = split ? band + 52 : H >= 1800 ? 380 : H <= 1100 ? 250 : 290, bottom = H - BAR2 - (H >= 1800 && !split ? 120 : 44);
   let L;
   for (let s3 = big; s3 >= 0.5; s3 -= 0.04) {
     ctx.font = `800 ${88 * s3}px ${F.display}`;
@@ -1528,10 +1664,10 @@ function drawPoster(ctx, post, brand, assets = {}) {
     if (top + h2 <= bottom) break;
   }
   const { s: s2, title, sub, pts, rows, h } = L;
-  let y = top + Math.max(0, (bottom - top - h) * (centered || layout === "minimal" ? 0.5 : 0.4));
+  let y = top + Math.max(0, (bottom - top - h) * (split ? 0.3 : centered || layout === "minimal" ? 0.5 : 0.4));
   ctx.textAlign = start;
   ctx.textBaseline = "top";
-  if (photo) {
+  if (photo && !split) {
     ctx.shadowColor = "rgba(0,0,0,.45)";
     ctx.shadowBlur = 18;
   }
@@ -1672,8 +1808,14 @@ var CanvasPosterRenderer = class {
     const label = typeof this.options.contactLabel === "function" ? this.options.contactLabel(brand) : this.options.contactLabel;
     drawPoster(ctx, post, brand, { logo: logo2, photo, logoPlate, fonts, ...label ? { contactLabel: label } : {} });
   }
+  /**
+   * The image that is published. PNG keeps text sharp; a poster with a photo, or a PNG over
+   * Facebook's 4 MB photo limit, goes out as JPEG.
+   */
   async render(post, brand) {
-    return this.export(post, brand, "image/png");
+    if (post.design?.photo) return this.export(post, brand, "image/jpeg");
+    const png = await this.export(post, brand, "image/png");
+    return png.size <= MAX_UPLOAD_BYTES ? png : this.export(post, brand, "image/jpeg");
   }
   /** PNG (lossless, for Facebook) or JPEG (smaller, for messaging apps and print shops). */
   async export(post, brand, type = "image/png") {
@@ -1867,7 +2009,8 @@ var DolphinStudio = class {
     const samples = page.length && file.length ? mergeSources(page, file) : page.length ? page : file;
     const from = page.length && file.length ? "mixed" : page.length ? "page" : "import";
     this.peakReport = analyzePeaks(samples, void 0, from);
-    this.insightsReport = samples.length ? analyzeInsights(page.length || !this.imported?.undated ? samples : [], this.now()) : null;
+    const forInsights = this.imported?.undated ? page : samples;
+    this.insightsReport = samples.length ? analyzeInsights(forInsights, this.now()) : null;
     await this.deps.store.set(`peaks:${this.ns}`, JSON.stringify(this.peakReport));
     await this.deps.store.set(`insights:${this.ns}`, JSON.stringify(this.insightsReport));
     this.emit();
@@ -2187,6 +2330,7 @@ var fr = {
   subjects: { mix: "Un peu de tout", sell: "Vendre les produits disponibles", tips: "Conseils utiles", trust: "Confiance et coulisses", soon: "Annoncer les nouveaut\xE9s" },
   tones: { warm: "Chaleureux", pro: "Professionnel", bold: "\xC9nergique" },
   contact: "Contact",
+  tabs: { create: "Cr\xE9er", posts: "Publications", calendar: "Calendrier", audience: "Audience", settings: "R\xE9glages" },
   campaign: "Campagne",
   objective: "Objectif",
   objectives: { awareness: "Faire conna\xEEtre la marque", engagement: "Faire r\xE9agir", traffic: "Visites du site", leads: "Demandes et contacts", sales: "Ventes", event: "\xC9v\xE9nement ou offre" },
@@ -2203,7 +2347,7 @@ var fr = {
   format: "Format",
   formats: { portrait: "Publication 4:5", square: "Carr\xE9 1:1", story: "Story 9:16" },
   layout: "Mise en page",
-  layouts: { classic: "Classique", centered: "Centr\xE9e", minimal: "Minimaliste" },
+  layouts: { classic: "Classique", centered: "Centr\xE9e", minimal: "Minimaliste", split: "Photo + bandeau" },
   photo: "Photo de fond",
   addPhoto: "Ajouter une photo",
   removePhoto: "Retirer la photo",
@@ -2265,6 +2409,7 @@ var fr = {
     too_long: "R\xE9ponse trop longue : demandez moins de publications.",
     schedule_window: "Choisissez une date entre 10 minutes et 30 jours.",
     not_configured: "Service non configur\xE9.",
+    storage_full: "Stockage du navigateur plein : retirez des photos ou des publications anciennes.",
     unknown: "Erreur inattendue."
   }
 };
@@ -2394,6 +2539,7 @@ var en = {
   subjects: { mix: "A bit of everything", sell: "Sell available products", tips: "Useful tips", trust: "Trust and behind the scenes", soon: "Announce what's coming" },
   tones: { warm: "Warm", pro: "Professional", bold: "Bold" },
   contact: "Contact",
+  tabs: { create: "Create", posts: "Posts", calendar: "Calendar", audience: "Audience", settings: "Settings" },
   campaign: "Campaign",
   objective: "Objective",
   objectives: { awareness: "Make the brand known", engagement: "Get reactions", traffic: "Website visits", leads: "Inquiries and contacts", sales: "Sales", event: "Event or offer" },
@@ -2410,7 +2556,7 @@ var en = {
   format: "Format",
   formats: { portrait: "Feed post 4:5", square: "Square 1:1", story: "Story 9:16" },
   layout: "Layout",
-  layouts: { classic: "Classic", centered: "Centered", minimal: "Minimal" },
+  layouts: { classic: "Classic", centered: "Centered", minimal: "Minimal", split: "Picture + panel" },
   photo: "Background photo",
   addPhoto: "Add a photo",
   removePhoto: "Remove the photo",
@@ -2472,6 +2618,7 @@ var en = {
     too_long: "Answer too long: ask for fewer posts.",
     schedule_window: "Pick a date between 10 minutes and 30 days.",
     not_configured: "Service not configured.",
+    storage_full: "Browser storage is full: remove photos or old posts.",
     unknown: "Unexpected error."
   }
 };
@@ -2601,6 +2748,7 @@ var ar = {
   subjects: { mix: "\u0642\u0644\u064A\u0644 \u0645\u0646 \u0643\u0644 \u0634\u064A\u0621", sell: "\u0628\u064A\u0639 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629", tips: "\u0646\u0635\u0627\u0626\u062D \u0645\u0641\u064A\u062F\u0629", trust: "\u0627\u0644\u062B\u0642\u0629 \u0648\u0645\u0627 \u0648\u0631\u0627\u0621 \u0627\u0644\u0643\u0648\u0627\u0644\u064A\u0633", soon: "\u0627\u0644\u0625\u0639\u0644\u0627\u0646 \u0639\u0646 \u0627\u0644\u062C\u062F\u064A\u062F" },
   tones: { warm: "\u0648\u062F\u0648\u062F", pro: "\u0627\u062D\u062A\u0631\u0627\u0641\u064A", bold: "\u062D\u0645\u0627\u0633\u064A" },
   contact: "\u062A\u0648\u0627\u0635\u0644",
+  tabs: { create: "\u0625\u0646\u0634\u0627\u0621", posts: "\u0627\u0644\u0645\u0646\u0634\u0648\u0631\u0627\u062A", calendar: "\u0627\u0644\u062A\u0642\u0648\u064A\u0645", audience: "\u0627\u0644\u062C\u0645\u0647\u0648\u0631", settings: "\u0627\u0644\u0625\u0639\u062F\u0627\u062F\u0627\u062A" },
   campaign: "\u0627\u0644\u062D\u0645\u0644\u0629",
   objective: "\u0627\u0644\u0647\u062F\u0641",
   objectives: { awareness: "\u0627\u0644\u062A\u0639\u0631\u064A\u0641 \u0628\u0627\u0644\u0639\u0644\u0627\u0645\u0629", engagement: "\u062C\u0644\u0628 \u0627\u0644\u062A\u0641\u0627\u0639\u0644", traffic: "\u0632\u064A\u0627\u0631\u0627\u062A \u0627\u0644\u0645\u0648\u0642\u0639", leads: "\u0627\u0644\u0627\u0633\u062A\u0641\u0633\u0627\u0631\u0627\u062A \u0648\u0627\u0644\u062A\u0648\u0627\u0635\u0644", sales: "\u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A", event: "\u062D\u062F\u062B \u0623\u0648 \u0639\u0631\u0636" },
@@ -2617,7 +2765,7 @@ var ar = {
   format: "\u0627\u0644\u0645\u0642\u0627\u0633",
   formats: { portrait: "\u0645\u0646\u0634\u0648\u0631 4:5", square: "\u0645\u0631\u0628\u0639 1:1", story: "\u0642\u0635\u0629 9:16" },
   layout: "\u0627\u0644\u062A\u062E\u0637\u064A\u0637",
-  layouts: { classic: "\u0643\u0644\u0627\u0633\u064A\u0643\u064A", centered: "\u0641\u064A \u0627\u0644\u0648\u0633\u0637", minimal: "\u0628\u0633\u064A\u0637" },
+  layouts: { classic: "\u0643\u0644\u0627\u0633\u064A\u0643\u064A", centered: "\u0641\u064A \u0627\u0644\u0648\u0633\u0637", minimal: "\u0628\u0633\u064A\u0637", split: "\u0635\u0648\u0631\u0629 + \u0634\u0631\u064A\u0637" },
   photo: "\u0635\u0648\u0631\u0629 \u0627\u0644\u062E\u0644\u0641\u064A\u0629",
   addPhoto: "\u0625\u0636\u0627\u0641\u0629 \u0635\u0648\u0631\u0629",
   removePhoto: "\u0625\u0632\u0627\u0644\u0629 \u0627\u0644\u0635\u0648\u0631\u0629",
@@ -2679,6 +2827,7 @@ var ar = {
     too_long: "\u0627\u0644\u0625\u062C\u0627\u0628\u0629 \u0637\u0648\u064A\u0644\u0629 \u062C\u062F\u064B\u0627: \u0627\u0637\u0644\u0628 \u0639\u062F\u062F\u064B\u0627 \u0623\u0642\u0644.",
     schedule_window: "\u0627\u062E\u062A\u0631 \u062A\u0627\u0631\u064A\u062E\u064B\u0627 \u0628\u064A\u0646 10 \u062F\u0642\u0627\u0626\u0642 \u064830 \u064A\u0648\u0645\u064B\u0627.",
     not_configured: "\u0627\u0644\u062E\u062F\u0645\u0629 \u063A\u064A\u0631 \u0645\u0647\u064A\u0651\u0623\u0629.",
+    storage_full: "\u0645\u0633\u0627\u062D\u0629 \u062A\u062E\u0632\u064A\u0646 \u0627\u0644\u0645\u062A\u0635\u0641\u062D \u0645\u0645\u062A\u0644\u0626\u0629: \u0627\u062D\u0630\u0641 \u0635\u0648\u0631\u064B\u0627 \u0623\u0648 \u0645\u0646\u0634\u0648\u0631\u0627\u062A \u0642\u062F\u064A\u0645\u0629.",
     unknown: "\u062E\u0637\u0623 \u063A\u064A\u0631 \u0645\u062A\u0648\u0642\u0639."
   }
 };
@@ -3062,6 +3211,13 @@ button[disabled]{opacity:.55;cursor:progress}
 .toast{position:sticky;top:8px;z-index:5;margin-bottom:12px;padding:11px 14px;border-radius:10px;font-weight:600;background:var(--d-primary);color:#fff}
 .toast.error{background:var(--d-danger)}.toast.success{background:var(--d-ok)}
 .lock{max-width:420px;margin:10px auto}
+.tabs{position:sticky;top:0;z-index:4;display:flex;gap:4px;overflow-x:auto;scrollbar-width:none;margin:0 -4px 14px;padding:6px 4px;background:var(--d-bg);border-bottom:1px solid var(--d-line)}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:none;display:inline-flex;align-items:center;gap:6px;background:transparent;color:var(--d-muted);border-radius:10px 10px 0 0;padding:9px 14px;border:0;border-bottom:3px solid transparent;margin-bottom:-7px}
+.tab:hover{background:color-mix(in srgb,var(--d-primary) 6%,transparent);color:var(--d-ink)}
+.tab[aria-selected=true]{color:var(--d-primary);border-bottom-color:var(--d-accent);background:var(--d-surface)}
+.count{font-size:.72rem;font-weight:800;line-height:1;min-width:20px;padding:4px 6px;border-radius:99px;background:var(--d-primary);color:#fff}
+.count.warn{background:#a15c07}
 .post{display:grid;grid-template-columns:minmax(200px,300px) minmax(0,1fr);gap:18px;align-items:start}
 .post canvas{display:block;width:100%;height:auto;border-radius:12px;background:var(--d-line)}
 .post .head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px}
@@ -3077,6 +3233,7 @@ button[disabled]{opacity:.55;cursor:progress}
 var MARK_SVG = `<svg class="mark" viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="dg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2fd3a0"/><stop offset="1" stop-color="#0b6b4f"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="26" fill="url(#dg)"/><path d="M12 80 C 30 72, 44 84, 60 78 S 82 70, 90 76" fill="none" stroke="#ffa124" stroke-width="4" stroke-linecap="round"/><g fill="#fff"><path d="M28 72 C 26 48, 44 28, 66 26 C 74 25.5, 80 28, 83 32.5 C 86 33.5, 90 34.5, 94 37 C 90 39.5, 85 40, 80 39.5 C 62 39, 45 50, 36 71 Z"/><path d="M45 32 C 46 24, 51 19, 58 16.5 C 55 22, 55 26.5, 57 29.5 Z"/><path d="M55 43 C 55 50, 52 55, 47 58 C 49 52, 50 47, 50 44 Z"/><path d="M32 68 C 27 74, 21 76, 15 75 C 20 72, 24 69, 27 65 Z"/><path d="M33 69 C 35 76, 34 82, 30 87 C 31 81, 30 76, 28 72 Z"/></g><circle cx="78.5" cy="33" r="2.1" fill="#0b5a43"/><g fill="#ffa124"><path d="M82 9 l2 5 5 2 -5 2 -2 5 -2 -5 -5 -2 5 -2z"/><circle cx="92" cy="20" r="2"/></g></svg>`;
 
 // src/widget/element.ts
+var TABS = ["create", "posts", "calendar", "audience", "settings"];
 var IDLE_LOCK_MS = 15 * 6e4;
 var SUBJECTS = {
   mix: "a balanced mix: selling what is available, useful tips, trust and behind the scenes, what is coming soon",
@@ -3134,6 +3291,15 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
     });
     this.root.addEventListener("submit", (e) => void this.onSubmit(e));
     for (const ev of ["pointerdown", "keydown"]) this.root.addEventListener(ev, () => this.armIdleLock(), { passive: true });
+    this.root.addEventListener("keydown", (e) => {
+      const k = e.key, el = e.target;
+      if (!el.matches?.('[role="tab"]') || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(k)) return;
+      const tabs = [...this.root.querySelectorAll('[role="tab"]')];
+      const i = tabs.indexOf(el), rtl = this.getAttribute("dir") === "rtl";
+      const next = k === "Home" ? 0 : k === "End" ? tabs.length - 1 : (i + (k === "ArrowRight" !== rtl ? 1 : -1) + tabs.length) % tabs.length;
+      e.preventDefault();
+      void this.openTab(tabs[next].dataset.tab).then(() => this.root.querySelector(`#dt-${tabs[next].dataset.tab}`)?.focus());
+    });
   }
   disconnectedCallback() {
     clearTimeout(this.idleTimer);
@@ -3200,7 +3366,7 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
     this.t = MESSAGES[lang];
     this.setAttribute("dir", lang === "ar" ? "rtl" : "ltr");
     this.siteUrl = cfg.siteUrl ?? (globalThis.location ? `${location.origin}/` : "");
-    this.store = new LocalStore(`dolphin:${initial.id}:`);
+    this.store = new IdbStore(`dolphin:${initial.id}:`);
     this.renderer = new CanvasPosterRenderer({ ...cfg.fonts ? { fonts: cfg.fonts } : {}, contactLabel: (b) => b.contact.whatsapp ? "WhatsApp" : this.t.contact });
     this.studio = new DolphinStudio({ brand: initial, brandLocked: !!cfg.brand, renderer: this.renderer, store: this.store });
     await this.studio.load();
@@ -3252,7 +3418,13 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
     else if (this.view === "setup" || this.view === "lock") body = this.lockView();
     else {
       const st = this.studio;
-      body = (this.cfg.showConnections === false ? "" : this.connectionsView()) + siteCard({ t: this.t, brand: st.brand, locked: st.brandLocked, saved: st.hasSavedBrand, draft: this.draft, logoCandidates: this.logoCandidates, siteUrl: this.siteUrl, busy: this.busy, canAnalyze: st.canGenerate }) + (this.ready ? ideasCard(this.t, st.ideas, this.busy, st.canGenerate, st.canGenerate) + peakCard(this.t, st.peaks, this.busy) + insightsCard(this.t, this.uiLang, st.insights, st.importedData, this.busy) + this.generateView() + calendarCard(this.t, this.uiLang, st.list(), /* @__PURE__ */ new Date()) + this.postsView() : "");
+      const settings = (this.cfg.showConnections === false ? "" : this.connectionsView()) + siteCard({ t: this.t, brand: st.brand, locked: st.brandLocked, saved: st.hasSavedBrand, draft: this.draft, logoCandidates: this.logoCandidates, siteUrl: this.siteUrl, busy: this.busy, canAnalyze: st.canGenerate });
+      if (!this.ready) body = settings;
+      else {
+        const tab = this.currentTab(!!settings);
+        const panel = tab === "create" ? ideasCard(this.t, st.ideas, this.busy, st.canGenerate, st.canGenerate) + this.generateView() : tab === "posts" ? this.postsView() : tab === "calendar" ? calendarCard(this.t, this.uiLang, st.list(), /* @__PURE__ */ new Date()) || `<p class="empty">${esc2(t.empty)}</p>` : tab === "audience" ? peakCard(this.t, st.peaks, this.busy) + insightsCard(this.t, this.uiLang, st.insights, st.importedData, this.busy) : settings;
+        body = this.tabsView(tab, !!settings) + `<section role="tabpanel" id="dp-${tab}" aria-labelledby="dt-${tab}">${panel}</section>`;
+      }
     }
     const open = new Set([...this.root.querySelectorAll("details[data-k]")].map((d) => [d.dataset.k, d.open]).filter(([, o]) => o).map(([k]) => k));
     const closed = new Set([...this.root.querySelectorAll("details[data-k]")].filter((d) => !d.open).map((d) => d.dataset.k));
@@ -3262,6 +3434,32 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
       else if (closed.has(d.dataset.k)) d.open = false;
     });
     this.drawAll();
+  }
+  /** The open tab: the saved one, or the settings while no AI key is connected. */
+  currentTab(hasSettings) {
+    let tab = TABS.includes(this.prefs.tab) ? this.prefs.tab : "create";
+    if (!this.studio.canGenerate && hasSettings && this.mode === "direct" && !this.prefs.tab) tab = "settings";
+    if (tab === "settings" && !hasSettings) tab = "create";
+    return tab;
+  }
+  tabsView(current, hasSettings) {
+    const t = this.t, posts = this.studio.list();
+    const todo = posts.filter((p) => p.status === "draft" || p.status === "failed").length;
+    const upcoming = posts.filter((p) => p.status === "scheduled" && new Date(p.scheduledAt) > /* @__PURE__ */ new Date()).length;
+    const needsKeys = this.mode === "direct" && !this.studio.canGenerate;
+    const badge = {
+      ...todo ? { posts: String(todo) } : {},
+      ...upcoming ? { calendar: String(upcoming) } : {},
+      ...needsKeys ? { settings: "!" } : {}
+    };
+    const icons = { create: "\u2726", posts: "\u25A6", calendar: "\u25F7", audience: "\u2197", settings: "\u2699" };
+    return `<nav class="tabs" role="tablist" aria-label="DOLPHin">${TABS.filter((k) => k !== "settings" || hasSettings).map((k) => `<button role="tab" class="tab" id="dt-${k}" data-act="tab" data-tab="${k}" aria-selected="${k === current}" aria-controls="dp-${k}" tabindex="${k === current ? 0 : -1}">
+        <span aria-hidden="true">${icons[k]}</span> ${esc2(t.tabs[k])}${badge[k] ? ` <span class="count${badge[k] === "!" ? " warn" : ""}">${esc2(badge[k])}</span>` : ""}</button>`).join("")}</nav>`;
+  }
+  async openTab(tab) {
+    this.prefs.tab = tab;
+    this.render();
+    await this.store.set("prefs", JSON.stringify(this.prefs)).catch(() => void 0);
   }
   lockView() {
     const t = this.t, setup = this.view === "setup";
@@ -3622,6 +3820,9 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
         case "goto":
           this.goto(id);
           break;
+        case "tab":
+          await this.openTab(b.dataset.tab);
+          break;
         case "export-csv":
           this.save(new Blob([studio.exportCsv()], { type: "text/csv;charset=utf-8" }), `dolphin-plan-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.csv`);
           break;
@@ -3709,6 +3910,7 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
       ...this.campaignOptions()
     });
     this.busy = false;
+    this.prefs.tab = "posts";
     this.render();
     this.toast(fill(this.t.generated, { n: posts.length, cost: usd(estimateCostUsd(usage, model)) }), "success");
   }
@@ -3772,9 +3974,13 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
   async saveProfile() {
     if (!this.draft) return;
     const draft = { ...this.draft, products: this.draft.products.filter((p) => p.name.trim()) };
-    await this.studio.setBrand(draft);
+    const saved = await this.studio.setBrand(draft);
     this.draft = null;
     this.applyBrandLook();
+    if (!this.cfg.lang) {
+      this.t = MESSAGES[saved.language];
+      this.setAttribute("dir", saved.language === "ar" ? "rtl" : "ltr");
+    }
     this.render();
     this.toast(this.t.profileSaved, "success");
   }
@@ -3793,6 +3999,7 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
       ...this.campaignOptions()
     });
     this.busy = false;
+    this.prefs.tab = "posts";
     this.render();
     this.toast(fill(this.t.generated, { n: posts.length, cost: usd(estimateCostUsd(usage, model)) }), "success");
   }
@@ -3812,7 +4019,7 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
   async download(id, type = "image/png") {
     const post = this.studio.get(id);
     if (!post) return;
-    const blob = type === "image/png" ? await this.studio.renderImage(id) : await this.renderer.export(post, this.studio.brand, type);
+    const blob = await this.renderer.export(post, this.studio.brand, type);
     this.save(blob, `dolphin-${id.slice(0, 8)}-${post.design?.format ?? "portrait"}.${type === "image/png" ? "png" : "jpg"}`);
   }
   save(blob, name) {
@@ -3824,6 +4031,11 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
   }
   /** Scrolls to a post card and highlights it for a moment. */
   goto(id) {
+    if (this.prefs.tab !== "posts") {
+      this.prefs.tab = "posts";
+      void this.store.set("prefs", JSON.stringify(this.prefs));
+      this.render();
+    }
     const card = this.root.querySelector(`article[data-post="${CSS.escape(id)}"]`);
     if (!card) return;
     card.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -3872,6 +4084,7 @@ export {
   HTTP_STATUS,
   HttpLlm,
   HttpPublisher,
+  IdbStore,
   LocalStore,
   MAX_POSTS,
   MODEL_PRICING,

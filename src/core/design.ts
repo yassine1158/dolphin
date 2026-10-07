@@ -14,7 +14,7 @@ export const POSTER_SIZES: Record<PosterFormat, { width: number; height: number 
   story: { width: 1080, height: 1920 },
 };
 export const FORMATS = Object.keys(POSTER_SIZES) as PosterFormat[];
-export const LAYOUTS: readonly PosterLayout[] = ["classic", "centered", "minimal"];
+export const LAYOUTS: readonly PosterLayout[] = ["classic", "centered", "minimal", "split"];
 const THEMES: readonly PosterTheme[] = ["dark", "light", "accent"];
 const STYLES: readonly PointStyle[] = ["checks", "steps"];
 const STATUSES: readonly PostStatus[] = ["draft", "scheduled", "published", "failed"];

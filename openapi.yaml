@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: DOLPHin API
-  version: 0.4.0
+  version: 0.5.0
   description: |
     Contract between the <dolphin-studio> widget (proxy mode) and a server that holds the keys.
     The reference implementation is `dolphin-server` (Node). Any backend (PHP, Python, Java, Go, .NET…)
@@ -84,7 +84,7 @@ paths:
               type: object
               required: [imageBase64, caption]
               properties:
-                imageBase64: { type: string, description: PNG, base64, at most 8 MB }
+                imageBase64: { type: string, description: "PNG or JPEG (type read from the bytes), base64, at most 8 MB" }
                 caption: { type: string, maxLength: 5000 }
                 scheduledAt: { type: string, format: date-time, description: Absent means now. Between 10 minutes and 30 days ahead. }
       responses:

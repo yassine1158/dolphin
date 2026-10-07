@@ -5,6 +5,8 @@ import type { BrandProfile, Post } from "../core/types.js";
 import type { PosterRenderer } from "../ports/index.js";
 import { paletteFor, rgba, type Palette } from "./theme.js";
 
+/** Facebook refuses photos over 4 MB: keep a margin. */
+export const MAX_UPLOAD_BYTES = 3_900_000;
 export const POSTER_WIDTH = 1080;
 export const POSTER_HEIGHT = 1350;
 
@@ -56,11 +58,14 @@ function photoPalette(T: Palette): Palette {
   return { ...T, fg: "#ffffff", tagBg: "rgba(0,0,0,.35)", tagFg: "#ffffff", tagLine: "rgba(255,255,255,.55)", logo: "plate" };
 }
 
-/** Draws `img` so it covers the whole rectangle (centered crop). */
-function cover(ctx: Ctx, img: CanvasImageSource, W: number, H: number): void {
+/** Draws `img` so it covers the rectangle (centered crop), clipped to it. */
+function cover(ctx: Ctx, img: CanvasImageSource, W: number, H: number, top = 0): void {
   const [iw, ih] = sizeOf2(img);
   const k = Math.max(W / iw, H / ih), w = iw * k, h = ih * k;
-  ctx.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+  ctx.save();
+  ctx.beginPath(); ctx.rect(0, top, W, H); ctx.clip();
+  ctx.drawImage(img, (W - w) / 2, top + (H - h) / 2, w, h);
+  ctx.restore();
 }
 
 /**
@@ -72,10 +77,14 @@ export function drawPoster(ctx: Ctx, post: Post, brand: BrandProfile, assets: Po
   const M = 80, BAR = 170, MAXW = W - 2 * M;
   const layout = post.design?.layout ?? "classic";
   const centered = layout === "centered";
+  // split: a picture band on top (the photo, or a brand block with the big logo), the text below
+  const split = layout === "split";
+  const band = split ? Math.round(H * (H >= 1800 ? 0.5 : H <= 1100 ? 0.4 : 0.45)) : 0;
   const F = assets.fonts ?? DEFAULT_FONTS;
   const photo = assets.photo ?? null;
   const base = paletteFor(brand.colors, post.theme);
-  const T = photo ? photoPalette(base) : base;
+  const T = photo && !split ? photoPalette(base) : base;
+  const onBand = photoPalette(base); // tag and logo plate drawn over the band
   const rtl = brand.language === "ar";
   const x = (v: number, w = 0) => (rtl ? W - v - w : v); // mirror a left offset
   const start: CanvasTextAlign = centered ? "center" : rtl ? "right" : "left";
@@ -85,7 +94,23 @@ export function drawPoster(ctx: Ctx, post: Post, brand: BrandProfile, assets: Po
 
   // background
   ctx.fillStyle = T.bg; ctx.fillRect(0, 0, W, H);
-  if (photo) {
+  if (split) {
+    if (photo) {
+      cover(ctx, photo, W, band);
+      const g = ctx.createLinearGradient(0, 0, 0, band);
+      g.addColorStop(0, "rgba(0,0,0,.35)"); g.addColorStop(0.35, "rgba(0,0,0,0)");
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, band);
+    } else {
+      const g = ctx.createLinearGradient(0, 0, W, band);
+      g.addColorStop(0, brand.colors.accent); g.addColorStop(1, brand.colors.primary);
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, band);
+      const r = ctx.createRadialGradient(x(W * 0.85), band * 0.2, 0, x(W * 0.85), band * 0.2, W * 0.6);
+      r.addColorStop(0, "rgba(255,255,255,.28)"); r.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = r; ctx.fillRect(0, 0, W, band);
+    }
+    // a thin accent line between the band and the text
+    ctx.fillStyle = base.accent === base.bg ? base.fg : brand.colors.accent; ctx.fillRect(0, band - 8, W, 8);
+  } else if (photo) {
     cover(ctx, photo, W, H);
     const k = post.design?.overlay ?? 0.55;
     const g = ctx.createLinearGradient(0, 0, 0, H);
@@ -109,25 +134,34 @@ export function drawPoster(ctx: Ctx, post: Post, brand: BrandProfile, assets: Po
   let lw = 0;
   if (assets.logo && !post.design?.hideLogo) {
     const [iw, ih] = sizeOf2(assets.logo);
-    lw = Math.min(lh * iw / ih, 420);
-    if (T.logo === "plate" || assets.logoPlate) { ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.roundRect(x(M - 20, lw + 40), 60, lw + 40, lh + 24, 26); ctx.fill(); }
-    ctx.drawImage(assets.logo, x(M, lw), 72, lw, lh);
+    if (split && !photo) {
+      // brand block: the logo is the picture, big and centered on a white plate
+      const bh = Math.min(band * 0.46, 300), bw = Math.min(bh * iw / ih, W - 4 * M);
+      const bx = (W - bw) / 2, by = (band - bh) / 2 + 20;
+      ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.roundRect(bx - 36, by - 30, bw + 72, bh + 60, 40); ctx.fill();
+      ctx.drawImage(assets.logo, bx, by, bw, bh);
+    } else {
+      lw = Math.min(lh * iw / ih, 420);
+      if (split || T.logo === "plate" || assets.logoPlate) { ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.roundRect(x(M - 20, lw + 40), 60, lw + 40, lh + 24, 26); ctx.fill(); }
+      ctx.drawImage(assets.logo, x(M, lw), 72, lw, lh);
+    }
   }
   if (post.tag) {
+    const P = split ? onBand : T;
     ctx.font = `700 26px ${F.display}`;
     const label = post.tag.toUpperCase();
     const tw = Math.min(ctx.measureText(label).width + 56, W - 2 * M - lw - 40);
     const tx = x(W - M - tw, tw), ty = 72 + lh / 2 - 30;
-    ctx.fillStyle = T.tagBg; ctx.beginPath(); ctx.roundRect(tx, ty, tw, 60, 30); ctx.fill();
-    if (T.tagLine) { ctx.strokeStyle = T.tagLine; ctx.lineWidth = 2; ctx.stroke(); }
-    ctx.fillStyle = T.tagFg; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = P.tagBg; ctx.beginPath(); ctx.roundRect(tx, ty, tw, 60, 30); ctx.fill();
+    if (P.tagLine) { ctx.strokeStyle = P.tagLine; ctx.lineWidth = 2; ctx.stroke(); }
+    ctx.fillStyle = P.tagFg; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(label, tx + tw / 2, ty + 31, tw - 40);
   }
 
   // content, scaled to fit (minimal: a bigger title and no points)
   const points = layout === "minimal" ? [] : post.points.filter(Boolean).slice(0, 6);
   const big = layout === "minimal" ? 1.3 : 1;
-  const top = H >= 1800 ? 380 : H <= 1100 ? 250 : 290, bottom = H - BAR - (H >= 1800 ? 120 : 50);
+  const top = split ? band + 52 : H >= 1800 ? 380 : H <= 1100 ? 250 : 290, bottom = H - BAR - (H >= 1800 && !split ? 120 : 44);
   type Layout = { s: number; title: string[]; sub: string[]; pts: string[][]; rows: number[]; h: number };
   let L: Layout | undefined;
   for (let s = big; s >= 0.5; s -= 0.04) {
@@ -141,9 +175,9 @@ export function drawPoster(ctx: Ctx, post: Post, brand: BrandProfile, assets: Po
     if (top + h <= bottom) break;
   }
   const { s, title, sub, pts, rows, h } = L!;
-  let y = top + Math.max(0, (bottom - top - h) * (centered || layout === "minimal" ? 0.5 : 0.4));
+  let y = top + Math.max(0, (bottom - top - h) * (split ? 0.3 : centered || layout === "minimal" ? 0.5 : 0.4));
   ctx.textAlign = start; ctx.textBaseline = "top";
-  if (photo) { ctx.shadowColor = "rgba(0,0,0,.45)"; ctx.shadowBlur = 18; }
+  if (photo && !split) { ctx.shadowColor = "rgba(0,0,0,.45)"; ctx.shadowBlur = 18; }
   ctx.fillStyle = T.fg; ctx.font = `800 ${88 * s}px ${F.display}`;
   for (const l of title) { ctx.fillText(l, tx0, y); y += 94 * s; }
   if (sub.length) {
@@ -247,8 +281,14 @@ export class CanvasPosterRenderer implements PosterRenderer {
     drawPoster(ctx, post, brand, { logo, photo, logoPlate, fonts, ...(label ? { contactLabel: label } : {}) });
   }
 
+  /**
+   * The image that is published. PNG keeps text sharp; a poster with a photo, or a PNG over
+   * Facebook's 4 MB photo limit, goes out as JPEG.
+   */
   async render(post: Post, brand: BrandProfile): Promise<Blob> {
-    return this.export(post, brand, "image/png");
+    if (post.design?.photo) return this.export(post, brand, "image/jpeg");
+    const png = await this.export(post, brand, "image/png");
+    return png.size <= MAX_UPLOAD_BYTES ? png : this.export(post, brand, "image/jpeg");
   }
 
   /** PNG (lossless, for Facebook) or JPEG (smaller, for messaging apps and print shops). */

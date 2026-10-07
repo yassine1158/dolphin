@@ -57,6 +57,25 @@ async function page(url, width = 1280) {
   await p.goto(url);
   return { p, errors };
 }
+const tab = async (p, name) => {
+  await p.click(`dolphin-studio [data-tab=${name}]`);
+  await p.waitForSelector(`dolphin-studio [data-tab=${name}][aria-selected=true]`);
+};
+/** Reads a value saved by the widget (IndexedDB "dolphin", store "kv"). */
+const idb = (p, key) => p.evaluate(async k => {
+  if (!(await indexedDB.databases()).some(d => d.name === "dolphin")) return null;
+  return new Promise(res => {
+    const r = indexedDB.open("dolphin");
+    r.onsuccess = () => {
+      const db = r.result;
+      if (!db.objectStoreNames.contains("kv")) { db.close(); res(null); return; }
+      const g = db.transaction("kv").objectStore("kv").get(k);
+      g.onsuccess = () => { db.close(); res(g.result ?? null); };
+      g.onerror = () => { db.close(); res(null); };
+    };
+    r.onerror = () => res(null);
+  });
+}, key);
 
 try {
   // 1. Proxy mode
@@ -69,9 +88,11 @@ try {
     check(/3 publication/.test(await p.textContent("dolphin-studio .toast")), "proxy: 3 posts generated");
     const hours = await p.$$eval("dolphin-studio input[type=datetime-local]", els => els.map(e => Number(e.value.slice(11, 13))));
     check(hours.length === 3 && hours.every(h => h === 19 || h === 10), `proxy: auto peak times by default (${hours.join(", ")} h)`);
+    await tab(p, "audience");
     await p.click("dolphin-studio [data-act=peaks]");
     await p.waitForSelector("dolphin-studio .hm-cell");
     check((await p.$$("dolphin-studio .hm-cell")).length === 42 && /Recommandation générale/.test(await p.textContent("dolphin-studio .peaks ~ * , dolphin-studio .card .state.missing") ?? ""), "proxy: peak card (heat map, general recommendation without history)");
+    await tab(p, "posts");
     await p.fill("dolphin-studio input[data-f$=':title']", "Titre modifié");
     await p.waitForTimeout(300);
     await p.screenshot({ path: join(OUT, "proxy.png"), fullPage: true });
@@ -114,7 +135,7 @@ try {
     await p.fill("dolphin-studio [data-key=metaPageId]", "123");
     await p.fill("dolphin-studio [data-key=metaToken]", "EAAtest");
     await p.click("dolphin-studio [data-act=save-keys]");
-    const vault = await p.evaluate(() => localStorage.getItem("dolphin:acme:vault"));
+    const vault = await idb(p, "dolphin:acme:vault");
     check(vault && !vault.includes("sk-ant-test"), "direct: keys encrypted at rest");
     await p.fill("dolphin-studio [data-pref=count]", "2");
     await p.click("dolphin-studio [data-act=generate]");
@@ -129,6 +150,7 @@ try {
     await p.click("dolphin-studio [data-act=lock]");
     await p.fill("dolphin-studio input[name=pass]", "phrase-secrete");
     await p.click("dolphin-studio button[type=submit]");
+    await tab(p, "settings");
     check(/Clé Claude enregistrée/.test(await p.textContent("dolphin-studio .state")), "direct: unlock restores keys");
     check(errors.length === 0, `direct: no console errors ${errors.join(" | ")}`);
     await p.close();
@@ -147,11 +169,13 @@ try {
     });
     await p.waitForSelector("dolphin-studio [data-act=generate]");
     check(await p.$("dolphin-studio input[name=pass]") === null && await p.$("dolphin-studio [data-act=lock]") === null, "host keys: no passphrase screen, no lock button");
+    await tab(p, "settings");
     check(/Clé Claude enregistrée/.test(await p.textContent("dolphin-studio .state")), "host keys: Claude key detected");
     await p.fill("dolphin-studio [data-key=metaPageId]", "999");
     await p.click("dolphin-studio [data-act=save-keys]");
     check(await p.evaluate(() => window.saved.length === 1 && window.saved[0].metaPageId === "999" && window.saved[0].claudeKey === "sk-ant-host"), "host keys: onSecretsChange receives the new keys");
-    check(await p.evaluate(() => localStorage.getItem("dolphin:acme:vault")) === null, "host keys: nothing written to the widget vault");
+    check(await idb(p, "dolphin:acme:vault") === null && await p.evaluate(() => localStorage.getItem("dolphin:acme:vault")) === null, "host keys: nothing written to the widget vault");
+    await tab(p, "create");
     await p.click("dolphin-studio [data-act=generate]");
     await p.waitForFunction(() => /invalide/.test(document.querySelector("dolphin-studio").shadowRoot.querySelector(".toast")?.textContent ?? ""));
     check(true, "host keys: Claude 401 shown as a clear message");
@@ -182,9 +206,13 @@ try {
     check(uploaded?.startsWith("data:image/png"), "auto: uploaded logo replaces it");
     await p.selectOption("dolphin-studio [data-b='products.1.status']", "soon");
     await p.click("dolphin-studio [data-act=save-profile]");
+    await p.waitForSelector("dolphin-studio [role=tab]");
+    check(await p.getAttribute("dolphin-studio [data-tab=create]", "aria-selected") === "true", "auto: tabs appear once the profile is saved, on « Créer »");
+    check((await p.$$("dolphin-studio .idea")).length === 2, "auto: post ideas shown");
+    await tab(p, "settings");
     await p.waitForSelector("dolphin-studio [data-act=edit-profile]");
     check(/2 produit\(s\), dont 1 disponible/.test(await p.textContent("dolphin-studio .profile-sum")), "auto: profile saved");
-    check((await p.$$("dolphin-studio .idea")).length === 2, "auto: post ideas shown");
+    await tab(p, "create");
     await p.click("dolphin-studio [data-act=write-idea]");
     await p.waitForFunction(() => document.querySelector("dolphin-studio").shadowRoot.querySelectorAll("canvas").length === 1);
     const g = generated.at(-1);
@@ -195,8 +223,10 @@ try {
     await import("node:fs").then(fs => fs.writeFileSync(join(OUT, "poster-auto.png"), Buffer.from(poster.split(",")[1], "base64")));
     // reload: the profile and ideas persist
     await p.reload();
-    await p.waitForSelector("dolphin-studio [data-act=edit-profile]");
-    check((await p.$$("dolphin-studio .idea")).length === 2, "auto: profile and ideas kept after reload");
+    await p.waitForSelector("dolphin-studio [role=tab]");
+    await tab(p, "create");
+    await p.waitForSelector("dolphin-studio .idea");
+    check((await p.$$("dolphin-studio .idea")).length === 2 && (await p.$$("dolphin-studio [data-tab=posts] .count")).length === 1, "auto: profile, ideas and posts kept after reload");
     check(errors.length === 0, `auto: no console errors ${errors.join(" | ")}`);
     await p.close();
   }
@@ -253,7 +283,7 @@ try {
     const photo = await p.screenshot({ type: "jpeg", quality: 70, clip: { x: 0, y: 0, width: 800, height: 600 } });
     await p.setInputFiles("dolphin-studio [data-photo]", { name: "photo.jpg", mimeType: "image/jpeg", buffer: photo });
     await p.waitForSelector("dolphin-studio [data-act=no-photo]");
-    const stored = await sr(() => JSON.parse(localStorage.getItem("dolphin:acme-pro:posts:acme-pro")));
+    const stored = JSON.parse(await idb(p, "dolphin:acme-pro:posts:acme-pro"));
     check(stored[0].design?.layout === "centered" && stored[0].design?.photo?.startsWith("data:image/jpeg") && stored[0].campaign === "Portes ouvertes", "pro: layout, photo and campaign saved on the post");
     await p.waitForTimeout(500);
     const designed = await sr(() => document.querySelector("dolphin-studio").shadowRoot.querySelector("canvas").toDataURL());
@@ -265,13 +295,26 @@ try {
     await p.waitForTimeout(500);
     const story = await sr(() => document.querySelector("dolphin-studio").shadowRoot.querySelectorAll("canvas")[1].toDataURL());
     await import("node:fs").then(fs => fs.writeFileSync(join(OUT, "poster-story.png"), Buffer.from(story.split(",")[1], "base64")));
-    check((await p.$$("dolphin-studio .chip")).length === 3, "pro: calendar shows the 3 posts");
+    check(await p.textContent("dolphin-studio [data-tab=posts] .count") === "3", "pro: the « Publications » tab counts the 3 drafts");
+    await tab(p, "calendar");
+    const chips = (await p.$$("dolphin-studio .chip")).length;
+    check(chips === 3, `pro: calendar shows the 3 posts (${chips})`);
+    await p.click("dolphin-studio .chip");
+    await p.waitForSelector("dolphin-studio article.flash");
+    check(await p.getAttribute("dolphin-studio [data-tab=posts]", "aria-selected") === "true", "pro: a calendar chip opens its post");
+    // keyboard: arrow keys move between tabs
+    await p.focus("dolphin-studio [data-tab=posts]");
+    await p.keyboard.press("ArrowRight");
+    await p.waitForFunction(() => document.querySelector("dolphin-studio").shadowRoot.activeElement?.dataset.tab === "calendar");
+    check(true, "pro: arrow keys move between tabs");
+    await tab(p, "posts");
     // export the plan
     const [download] = await Promise.all([p.waitForEvent("download"), p.click("dolphin-studio [data-act=export-csv]")]);
     const csv = await import("node:fs").then(async fs => fs.readFileSync(await download.path(), "utf8"));
     check(csv.startsWith("﻿date,time,status") && /utm_campaign=portes-ouvertes/.test(csv) && csv.split("\r\n").length === 5, "pro: plan exported as CSV with tracked links");
     // import a Business Suite export: insights appear
     const rows = Array.from({ length: 24 }, (_, i) => { const d = new Date(2026, 4, 1 + i, i % 2 ? 19 : 9); return `${i},Post ${i},${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/2026 ${d.getHours()}:00,${i % 2 ? 60 : 8},${i % 2 ? 6 : 1},${i % 2 ? 3 : 0}`; });
+    await tab(p, "audience");
     await p.setInputFiles("dolphin-studio [data-import]", { name: "posts.csv", mimeType: "text/csv", buffer: Buffer.from(`Post ID,Title,Publish time,Reactions,Comments,Shares\n${rows.join("\n")}\n`) });
     await p.waitForSelector("dolphin-studio .kpis");
     const kpis = await p.textContent("dolphin-studio .kpis");
@@ -279,11 +322,13 @@ try {
     check(await sr(() => /Calculé à partir de 24 lignes importées/.test(document.querySelector("dolphin-studio").shadowRoot.textContent)), "pro: peak card based on the imported file");
     await p.screenshot({ path: join(OUT, "pro.png"), fullPage: true });
     // publish: the tracked link is in the caption
+    await tab(p, "posts");
     const before = published.length;
     await p.click("dolphin-studio [data-act=schedule-all]");
     await p.waitForFunction(() => document.querySelector("dolphin-studio").shadowRoot.querySelectorAll(".pill.scheduled").length === 3);
     const sent = published.slice(before);
     check(sent.length === 3 && sent.every(x => /👉 https:\/\/acme\.example\/visite\?utm_source=facebook&utm_medium=social&utm_campaign=portes-ouvertes/.test(x.caption)), "pro: captions carry the UTM link");
+    check(sent[0].image.type === "image/jpeg" && sent[0].image.size < 3_900_000 && sent.slice(1).some(x => x.image.type === "image/png"), "pro: a poster with a photo goes out as JPEG (under Facebook's 4 MB), the others as PNG");
     await p.setViewportSize({ width: 390, height: 900 });
     await p.waitForTimeout(200);
     check(await p.evaluate(() => document.documentElement.scrollWidth <= 390), "pro: no horizontal scroll on mobile");

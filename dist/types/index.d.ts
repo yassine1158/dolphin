@@ -24,7 +24,7 @@ export type * from "./ports/index.js";
 export { ClaudeLlm, type ClaudeLlmOptions } from "./adapters/llm/claude.js";
 export { HttpLlm, HttpPublisher, type HttpOptions } from "./adapters/http.js";
 export { MetaPagePublisher, appSecretProof, type MetaPageOptions } from "./adapters/publish/meta.js";
-export { LocalStore, MemoryStore } from "./adapters/storage/index.js";
+export { IdbStore, LocalStore, MemoryStore } from "./adapters/storage/index.js";
 export { Vault, type StudioSecrets } from "./adapters/secrets/vault.js";
 export { discoverSite, snapshotFromDocument } from "./adapters/site.js";
 export { drawPoster, CanvasPosterRenderer, POSTER_WIDTH, POSTER_HEIGHT, type PosterFonts } from "./render/poster.js";

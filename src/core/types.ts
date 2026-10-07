@@ -69,8 +69,11 @@ export type PosterTheme = "dark" | "light" | "accent";
 export type PointStyle = "checks" | "steps";
 /** Poster size: 4:5 feed (1080×1350), 1:1 square (1080×1080), 9:16 story (1080×1920). */
 export type PosterFormat = "portrait" | "square" | "story";
-/** classic: text on the start side; centered: everything centered; minimal: big title, no points. */
-export type PosterLayout = "classic" | "centered" | "minimal";
+/**
+ * classic: text on the start side; centered: everything centered; minimal: big title, no points;
+ * split: a picture band on top (the photo, or a brand block with the logo) and the text below.
+ */
+export type PosterLayout = "classic" | "centered" | "minimal" | "split";
 
 /** Designer choices for one poster. Every field is optional: defaults keep the original look. */
 export interface PosterDesign {

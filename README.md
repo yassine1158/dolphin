@@ -4,7 +4,7 @@
 
 DOLPHin écrit les publications d'une entreprise, dessine l'affiche à ses couleurs, puis la publie ou la programme sur sa page Facebook. Il s'installe sur **n'importe quel site web**, quel que soit le langage du serveur : il suffit d'une balise `<script>` et d'un composant `<dolphin-studio>`.
 
-> Statut : **bêta, en phase de test** (v0.4.0).
+> Statut : **bêta, en phase de test** (v0.5.0).
 
 **Page de présentation :** https://yassine1158.github.io/dolphin/
 
@@ -78,6 +78,12 @@ Quand la marque vient du site hôte (`brand` fourni, comme dans un CMS), DOLPHin
 
 DOLPHin lit les réactions, commentaires et partages des 300 dernières publications de la page (permission `pages_read_engagement`). Il en déduit les meilleures heures pour chaque jour de la semaine. Avec « Publier aux heures de pointe », activé par défaut, chaque publication de la série est programmée à l'heure de pointe de son jour, puis Facebook la publie tout seul. Si la page a moins de 8 publications, DOLPHin applique une recommandation générale : midi et soirée en semaine, fin de matinée le week-end.
 
+## Une interface en cinq onglets
+
+**Créer** (idées et génération), **Publications** (avec le nombre de brouillons à traiter), **Calendrier** (publications programmées à venir), **Audience** (heures de pointe et informations) et **Réglages** (connexions et profil du site). L'onglet ouvert est mémorisé, la génération ouvre directement les publications, une pastille du calendrier ouvre la publication concernée, et les flèches du clavier passent d'un onglet à l'autre.
+
+Les données du studio (publications, photos, imports) sont gardées dans **IndexedDB**, qui a de la place pour les photos de fond. Les données d'une ancienne version, dans localStorage, y sont déplacées automatiquement. Si le navigateur n'a plus de place, un message le dit clairement au lieu de perdre les données.
+
 ## Ce que disent vos publications (collecte d'informations)
 
 La carte « Ce que disent vos publications » réunit tout ce qu'on sait du public de la page :
@@ -93,9 +99,10 @@ La carte « Ce que disent vos publications » réunit tout ce qu'on sait du publ
 Chaque affiche se règle dans son panneau « Design » :
 
 - **Format** : publication 4:5 (1080×1350), carré 1:1 (1080×1080) ou story 9:16 (1080×1920).
-- **Mise en page** : classique, centrée, ou minimaliste (grand titre, sans points).
+- **Mise en page** : classique, centrée, minimaliste (grand titre, sans points), ou **photo et bandeau** (la photo en haut, le texte en dessous ; sans photo, un bloc aux couleurs de la marque avec le logo en grand).
 - **Photo de fond** (JPEG, PNG, WebP), assombrie au réglage voulu pour garder le texte lisible. La photo est réencodée : ses métadonnées (position GPS, appareil) sont supprimées.
 - Logo masquable, **« Version story »** en un clic, **Dupliquer**, export **PNG** ou **JPG**.
+- Une affiche avec photo part sur Facebook en JPEG, et une affiche PNG de plus de 4 Mo aussi : Facebook refuse les photos plus lourdes.
 
 ## Pour les responsables marketing
 
@@ -163,7 +170,7 @@ Garanties du cœur :
 
 - En mode proxy, définissez toujours `DOLPHIN_API_TOKEN` et `DOLPHIN_ALLOWED_ORIGINS`.
 - Le jeton est visible par les utilisateurs de la page : intégrez le composant uniquement dans un espace d'administration authentifié.
-- Le serveur limite la taille des requêtes (2 Mo pour l'IA, 12 Mo pour les images), n'accepte que des images PNG (8 Mo maximum), et compare les jetons en temps constant, sans révéler leur longueur.
+- Le serveur limite la taille des requêtes (2 Mo pour l'IA, 12 Mo pour les images), n'accepte que des images PNG ou JPEG (8 Mo maximum, type lu dans le fichier lui-même), et compare les jetons en temps constant, sans révéler leur longueur.
 - **Limite de débit** par adresse IP : 20 requêtes IA par minute (`DOLPHIN_RATE_LIMIT`), 120 pour les autres routes. Derrière un proxy inverse, `DOLPHIN_TRUST_PROXY=1` lit l'IP réelle dans `X-Forwarded-For`.
 - Les requêtes `POST` doivent être en `application/json` (un formulaire d'un autre site ne passe pas). Un navigateur d'une origine non autorisée reçoit `403` avant tout traitement. Un jeton placé dans l'URL est refusé.
 - Chaque réponse porte `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` et une CSP stricte. Les journaux ne contiennent jamais le message d'une erreur interne (il pourrait contenir une clé).
@@ -176,11 +183,13 @@ Garanties du cœur :
 ```bash
 npm install
 npm run typecheck   # TypeScript strict
-npm test            # 42 tests unitaires (cœur, analyse, couleurs, adaptateurs, serveur)
+npm test            # 88 tests unitaires (cœur, import CSV, informations, campagnes, sécurité, stockage, serveur)
 npm run build       # dist/: dolphin.js, dolphin.lite.js, dolphin.esm.js, server.mjs, types
-npm run e2e         # navigateur réel : proxy, direct, clés de l'hôte, analyse du site, arabe (Playwright)
+npm run e2e         # 50 contrôles dans un vrai navigateur : proxy, direct, clés de l'hôte, analyse du site, arabe, designer, marketing, audience (Playwright)
 npm run demo        # démo locale avec vos vraies clés (.env)
 ```
+
+La CI lance les deux à chaque PR : typecheck, tests unitaires, build, puis les tests navigateur (les captures d'écran sont gardées 7 jours dans l'onglet Actions).
 
 Variables du serveur : voir l'en-tête de [`src/server/cli.ts`](src/server/cli.ts).
 

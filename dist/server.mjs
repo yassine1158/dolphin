@@ -1,4 +1,4 @@
-/*! DOLPHin 0.4.0 · (c) 2026 Yassine Chaabane · SPDX-License-Identifier: AGPL-3.0-only · Licence commerciale : COMMERCIAL-LICENSE.md · Logiciels tiers : THIRD-PARTY-NOTICES.md */
+/*! DOLPHin 0.5.0 · (c) 2026 Yassine Chaabane · SPDX-License-Identifier: AGPL-3.0-only · Licence commerciale : COMMERCIAL-LICENSE.md · Logiciels tiers : THIRD-PARTY-NOTICES.md */
 
 // src/server/index.ts
 import { createHash, timingSafeEqual } from "node:crypto";
@@ -31,6 +31,7 @@ var HTTP_STATUS = {
   too_long: 422,
   schedule_window: 400,
   not_configured: 501,
+  storage_full: 507,
   unknown: 500
 };
 
@@ -593,7 +594,7 @@ function stripToken(link) {
 }
 
 // src/server/index.ts
-var VERSION = "0.4.0";
+var VERSION = "0.5.0";
 var MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 var MAX_AI_BODY = 2 * 1024 * 1024;
 var EXPENSIVE = /* @__PURE__ */ new Set(["POST /v1/generate", "POST /v1/analyze"]);
@@ -716,14 +717,15 @@ function createDolphinHandler(opts) {
       if (typeof body.imageBase64 !== "string" || !body.imageBase64) throw new DolphinError("invalid_request", "imageBase64 is required.");
       if (typeof body.caption !== "string" || body.caption.length > 5e3) throw new DolphinError("invalid_request", "caption must be a string of at most 5000 characters.");
       const bytes = Buffer.from(body.imageBase64, "base64");
-      if (bytes.length === 0 || bytes.length > MAX_IMAGE_BYTES) throw new DolphinError("invalid_request", "The image must be a PNG of at most 8 MB.");
-      if (bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a") throw new DolphinError("invalid_request", "The image must be a PNG.");
+      if (bytes.length === 0 || bytes.length > MAX_IMAGE_BYTES) throw new DolphinError("invalid_request", "The image must be a PNG or JPEG of at most 8 MB.");
+      const type = bytes.subarray(0, 8).toString("hex") === "89504e470d0a1a0a" ? "image/png" : bytes.subarray(0, 3).toString("hex") === "ffd8ff" ? "image/jpeg" : null;
+      if (!type) throw new DolphinError("invalid_request", "The image must be a PNG or JPEG.");
       let scheduledAt;
       if (body.scheduledAt !== void 0) {
         scheduledAt = new Date(String(body.scheduledAt));
         if (Number.isNaN(scheduledAt.getTime())) throw new DolphinError("invalid_request", "scheduledAt must be an ISO date.");
       }
-      return opts.publisher.publish({ image: new Blob([bytes], { type: "image/png" }), caption: body.caption, ...scheduledAt ? { scheduledAt } : {} });
+      return opts.publisher.publish({ image: new Blob([bytes], { type }), caption: body.caption, ...scheduledAt ? { scheduledAt } : {} });
     },
     "GET /v1/publisher/history": async () => {
       if (!opts.publisher?.history) throw new DolphinError("not_configured", "No publisher is configured on the server.");

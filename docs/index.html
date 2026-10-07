@@ -8,6 +8,7 @@
   <meta property="og:title" content="DOLPHin · publications Facebook automatiques">
   <meta property="og:description" content="Il comprend votre entreprise, écrit, dessine et publie tout seul, au meilleur moment.">
   <meta name="theme-color" content="#041a14">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self'; base-uri 'none'; form-action 'none'; object-src 'none'">
   <link rel="icon" href="dolphin-mark.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -28,6 +29,12 @@
     <symbol id="i-case" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2.5"/><path d="M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M3 13h18"/></symbol>
     <symbol id="i-code" viewBox="0 0 24 24"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.2"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2.5"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="i-gauge" viewBox="0 0 24 24"><path d="M4 18a8 8 0 1 1 16 0"/><path d="M12 18l4-6"/></symbol>
+    <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M14 9l2 2"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></symbol>
   </defs>
 </svg>
 
@@ -36,7 +43,7 @@
   <div class="wrap nav-in">
     <a class="brand" href="#top" aria-label="DOLPHin, accueil"><img src="dolphin-mark.svg" alt="" width="36" height="36"><span>DOLPH<b>in</b></span></a>
     <nav aria-label="Sections">
-      <a href="#idees">Idées clés</a><a href="#comment">En détail</a><a href="#auto">Automatique</a><a href="#integration">Intégration</a><a href="#faq">Questions</a>
+      <a href="#idees">Idées clés</a><a href="#comment">En détail</a><a href="#auto">Automatique</a><a href="#equipe">Outils</a><a href="#integration">Intégration</a><a href="#faq">Questions</a>
       <a class="gh" href="https://github.com/yassine1158/dolphin">GitHub</a>
     </nav>
   </div>
@@ -176,6 +183,57 @@
     </div>
   </section>
 
+  <!-- ============================================================ team tools -->
+  <section class="wrap team" id="equipe" aria-labelledby="team-title">
+    <p class="eyebrow rv">Pour toute l'équipe</p>
+    <h2 id="team-title" class="rv">Un studio pour le designer, le marketing et le patron</h2>
+    <p class="section-lead rv">Chaque métier y trouve ses outils. Tout reste simple : une interface en cinq onglets, <strong>Créer, Publications, Calendrier, Audience, Réglages</strong>.</p>
+    <div class="formats rv" aria-label="La même publication dans trois formats">
+      <figure><canvas data-format="portrait" width="1080" height="1350" role="img" aria-label="Affiche 4:5, mise en page photo et bandeau"></canvas><figcaption>Publication 4:5</figcaption></figure>
+      <figure><canvas data-format="square" width="1080" height="1080" role="img" aria-label="Affiche carrée, mise en page centrée"></canvas><figcaption>Carré 1:1</figcaption></figure>
+      <figure><canvas data-format="story" width="1080" height="1920" role="img" aria-label="Story 9:16 avec photo"></canvas><figcaption>Story 9:16</figcaption></figure>
+    </div>
+    <div class="team-grid">
+      <article class="rv"><span class="ic"><svg><use href="#i-brush"/></svg></span><h3>Le designer</h3>
+        <ul>
+          <li><b>3 formats</b> : publication 4:5, carré 1:1, story 9:16.</li>
+          <li><b>4 mises en page</b> : classique, centrée, minimaliste, photo et bandeau.</li>
+          <li><b>Photo de fond</b> assombrie au réglage voulu, sans les données cachées du fichier (position GPS, appareil).</li>
+          <li><b>Version story</b> en un clic, duplication, export PNG ou JPG.</li>
+        </ul></article>
+      <article class="rv"><span class="ic"><svg><use href="#i-target"/></svg></span><h3>Le responsable marketing</h3>
+        <ul>
+          <li><b>Objectif de campagne</b> : faire connaître, faire réagir, visites, demandes, ventes, événement. L'IA adapte le texte.</li>
+          <li><b>Clientèle visée et offre</b> : l'IA n'utilise que les faits que vous écrivez.</li>
+          <li><b>Lien suivi</b> avec paramètres UTM, pour mesurer les visites dans Google Analytics.</li>
+          <li><b>Calendrier</b> sur 4 semaines et <b>export du planning</b> pour Excel ou Google Sheets.</li>
+        </ul></article>
+      <article class="rv"><span class="ic"><svg><use href="#i-chart"/></svg></span><h3>Le patron</h3>
+        <ul>
+          <li><b>Ce que disent vos publications</b> : meilleurs jours, meilleures heures, publications qui ont le mieux marché.</li>
+          <li><b>Rythme et tendance</b> sur 4 semaines, avec un niveau de fiabilité et des conseils.</li>
+          <li><b>Import des exports Meta</b> : Business Suite pour les publications, Gestionnaire de publicités pour les heures des pubs.</li>
+          <li><b>Coût affiché</b> après chaque génération.</li>
+        </ul></article>
+    </div>
+  </section>
+
+  <!-- ============================================================ security -->
+  <section class="dark security" id="securite" aria-labelledby="sec-title">
+    <div class="wrap">
+      <p class="eyebrow light rv">Sécurité</p>
+      <h2 id="sec-title" class="rv">Vos clés et vos données sont protégées</h2>
+      <div class="sec-grid">
+        <article class="rv"><span class="ic"><svg><use href="#i-key"/></svg></span><h3>Clés hors de portée</h3><p>En mode serveur, les clés Claude et Facebook ne quittent jamais votre serveur. En mode navigateur, elles sont chiffrées sur l'appareil (AES-GCM 256, 600 000 itérations PBKDF2).</p></article>
+        <article class="rv"><span class="ic"><svg><use href="#i-lock"/></svg></span><h3>Verrouillage automatique</h3><p>Le studio se verrouille après 15 minutes sans activité. Après 3 phrases secrètes fausses, chaque essai attend de plus en plus longtemps.</p></article>
+        <article class="rv"><span class="ic"><svg><use href="#i-gauge"/></svg></span><h3>Serveur blindé</h3><p>Jeton obligatoire, sites autorisés uniquement, limite de demandes par adresse, en-têtes de sécurité, jeton refusé dans les liens, journaux sans secrets.</p></article>
+        <article class="rv"><span class="ic"><svg><use href="#i-shield"/></svg></span><h3>Facebook protégé</h3><p>Avec le secret de votre application Meta, chaque appel est signé (appsecret_proof) : un jeton volé ne suffit pas pour publier à votre place.</p></article>
+        <article class="rv"><span class="ic"><svg><use href="#i-file"/></svg></span><h3>Fichiers sûrs</h3><p>Le planning exporté ne peut pas lancer de formule dans un tableur. Les photos sont réencodées, les liens et les logos sont vérifiés.</p></article>
+        <article class="rv"><span class="ic"><svg><use href="#i-site"/></svg></span><h3>L'IA ne se laisse pas piéger</h3><p>Le texte de votre site est donné à l'IA comme une information, jamais comme un ordre. Rien n'est publié sans votre clic.</p></article>
+      </div>
+    </div>
+  </section>
+
   <!-- ============================================================ does / does not -->
   <section class="wrap rules" aria-labelledby="rules-title">
     <p class="eyebrow rv">Confiance</p>
@@ -246,7 +304,8 @@ DOLPHIN_API_TOKEN=… npx dolphin-server</code></pre></div>
       <details class="rv"><summary>De quoi ai-je besoin ?</summary><p>Une page Facebook dont vous êtes administrateur, un jeton d'accès de la page (permissions <em>pages_manage_posts</em> et <em>pages_read_engagement</em>), et une clé de l'API Claude. Sans connexion Facebook, vous pouvez quand même générer les publications, télécharger les affiches et copier les textes.</p></details>
       <details class="rv"><summary>Est-ce que je dois savoir programmer ?</summary><p>Non pour l'utiliser : tout se fait en cliquant, dans votre espace d'administration. L'installation demande une ligne de code, que votre développeur ou votre hébergeur ajoute en quelques minutes.</p></details>
       <details class="rv"><summary>Et Instagram ?</summary><p>Les affiches sont déjà au format Instagram, et les textes se copient en un clic. La publication automatique sur Instagram est prévue dans la version 2.0.</p></details>
-      <details class="rv"><summary>Mes données sont-elles en sécurité ?</summary><p>En mode serveur, les clés ne quittent jamais votre serveur, qui contrôle un jeton d'accès et n'accepte que les origines autorisées. En mode navigateur, elles sont chiffrées sur l'appareil (AES-GCM 256, clé dérivée par PBKDF2). Le contenu de votre site est envoyé à l'IA comme une donnée, jamais comme une instruction.</p></details>
+      <details class="rv"><summary>Mes données sont-elles en sécurité ?</summary><p>Oui. En mode serveur, les clés ne quittent jamais votre serveur, qui exige un jeton d'accès, n'accepte que les sites autorisés et limite le nombre de demandes. En mode navigateur, elles sont chiffrées sur l'appareil (AES-GCM 256, clé dérivée par PBKDF2 avec 600 000 itérations), et le studio se verrouille seul après 15 minutes. Le contenu de votre site est envoyé à l'IA comme une donnée, jamais comme une instruction. Détails dans la section <a href="#securite">Sécurité</a>.</p></details>
+      <details class="rv"><summary>Je fais déjà de la publicité Facebook. DOLPHin peut m'aider ?</summary><p>Oui. Exportez depuis le Gestionnaire de publicités un rapport ventilé par heure de la journée, puis importez-le dans l'onglet Audience. DOLPHin en déduit les heures où vos publicités obtiennent le plus de résultats, et les combine avec l'engagement de votre page. Le fichier reste sur votre appareil.</p></details>
       <details class="rv"><summary>Est-ce que ça marche dans ma langue ?</summary><p>L'interface et les publications existent en français, en anglais et en arabe. En arabe, l'interface et les affiches s'affichent de droite à gauche.</p></details>
     </div>
   </section>

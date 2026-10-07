@@ -73,6 +73,10 @@ export declare class DolphinStudioElement extends HTMLElement {
     private applyBrandLook;
     private get ready();
     private render;
+    /** The open tab: the saved one, or the settings while no AI key is connected. */
+    private currentTab;
+    private tabsView;
+    private openTab;
     private lockView;
     private connectionsView;
     private generateView;
