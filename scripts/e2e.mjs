@@ -222,6 +222,75 @@ try {
     check(errors.length === 0, `ar: no console errors ${errors.join(" | ")}`);
     await p.close();
   }
+
+  // 6. Marketing manager and designer: campaign, formats, photo, story copy, calendar, CSV export, data import
+  {
+    const { p, errors } = await page("http://localhost:8787/examples/plain-html/index.html");
+    await p.evaluate(() => {
+      const old = document.querySelector("dolphin-studio");
+      const cfg = JSON.parse(old.querySelector("script").textContent);
+      old.remove();
+      localStorage.clear();
+      Dolphin.mount("main", { ...cfg, brand: { ...cfg.brand, id: "acme-pro" } });
+    });
+    const sr = fn => p.evaluate(fn);
+    await p.waitForSelector("dolphin-studio details.campaign");
+    await p.click("dolphin-studio details.campaign summary");
+    await p.selectOption("dolphin-studio [data-pref='c.objective']", "event");
+    await p.fill("dolphin-studio [data-pref='c.campaign']", "Portes ouvertes");
+    await p.fill("dolphin-studio [data-pref='c.offer']", "Portes ouvertes samedi 12 octobre");
+    await p.fill("dolphin-studio [data-pref='c.link']", "https://acme.example/visite");
+    await p.selectOption("dolphin-studio [data-pref='c.format']", "square");
+    await p.fill("dolphin-studio [data-pref=count]", "2");
+    await p.click("dolphin-studio [data-act=generate]");
+    await p.waitForFunction(() => document.querySelector("dolphin-studio").shadowRoot.querySelectorAll("canvas").length === 2);
+    const g = generated.at(-1);
+    check(g.req.objective === "event" && /12 octobre/.test(g.req.offer ?? "") && g.req.link === undefined, "pro: objective and offer sent to the model, link kept local");
+    check(await sr(() => [...document.querySelector("dolphin-studio").shadowRoot.querySelectorAll("canvas")].every(c => c.width === 1080 && c.height === 1080)), "pro: square posters (1080×1080)");
+    // designer: centered layout and a background photo on the first post
+    await p.click("dolphin-studio details.designer summary");
+    await p.selectOption("dolphin-studio [data-d$=':layout']", "centered");
+    const photo = await p.screenshot({ type: "jpeg", quality: 70, clip: { x: 0, y: 0, width: 800, height: 600 } });
+    await p.setInputFiles("dolphin-studio [data-photo]", { name: "photo.jpg", mimeType: "image/jpeg", buffer: photo });
+    await p.waitForSelector("dolphin-studio [data-act=no-photo]");
+    const stored = await sr(() => JSON.parse(localStorage.getItem("dolphin:acme-pro:posts:acme-pro")));
+    check(stored[0].design?.layout === "centered" && stored[0].design?.photo?.startsWith("data:image/jpeg") && stored[0].campaign === "Portes ouvertes", "pro: layout, photo and campaign saved on the post");
+    await p.waitForTimeout(500);
+    const designed = await sr(() => document.querySelector("dolphin-studio").shadowRoot.querySelector("canvas").toDataURL());
+    await import("node:fs").then(fs => fs.writeFileSync(join(OUT, "poster-photo.png"), Buffer.from(designed.split(",")[1], "base64")));
+    // story copy
+    await p.click("dolphin-studio [data-act=story]");
+    await p.waitForFunction(() => document.querySelector("dolphin-studio").shadowRoot.querySelectorAll("canvas").length === 3);
+    check(await sr(() => { const c = document.querySelector("dolphin-studio").shadowRoot.querySelectorAll("canvas")[1]; return c.width === 1080 && c.height === 1920; }), "pro: story copy (1080×1920) next to the original");
+    await p.waitForTimeout(500);
+    const story = await sr(() => document.querySelector("dolphin-studio").shadowRoot.querySelectorAll("canvas")[1].toDataURL());
+    await import("node:fs").then(fs => fs.writeFileSync(join(OUT, "poster-story.png"), Buffer.from(story.split(",")[1], "base64")));
+    check((await p.$$("dolphin-studio .chip")).length === 3, "pro: calendar shows the 3 posts");
+    // export the plan
+    const [download] = await Promise.all([p.waitForEvent("download"), p.click("dolphin-studio [data-act=export-csv]")]);
+    const csv = await import("node:fs").then(async fs => fs.readFileSync(await download.path(), "utf8"));
+    check(csv.startsWith("﻿date,time,status") && /utm_campaign=portes-ouvertes/.test(csv) && csv.split("\r\n").length === 5, "pro: plan exported as CSV with tracked links");
+    // import a Business Suite export: insights appear
+    const rows = Array.from({ length: 24 }, (_, i) => { const d = new Date(2026, 4, 1 + i, i % 2 ? 19 : 9); return `${i},Post ${i},${String(d.getMonth() + 1).padStart(2, "0")}/${String(d.getDate()).padStart(2, "0")}/2026 ${d.getHours()}:00,${i % 2 ? 60 : 8},${i % 2 ? 6 : 1},${i % 2 ? 3 : 0}`; });
+    await p.setInputFiles("dolphin-studio [data-import]", { name: "posts.csv", mimeType: "text/csv", buffer: Buffer.from(`Post ID,Title,Publish time,Reactions,Comments,Shares\n${rows.join("\n")}\n`) });
+    await p.waitForSelector("dolphin-studio .kpis");
+    const kpis = await p.textContent("dolphin-studio .kpis");
+    check(/24/.test(kpis) && (await p.$$("dolphin-studio .bar-row")).length === 7 && (await p.$$("dolphin-studio .col")).length === 24, "pro: CSV import → insights (KPIs, days, hours)");
+    check(await sr(() => /Calculé à partir de 24 lignes importées/.test(document.querySelector("dolphin-studio").shadowRoot.textContent)), "pro: peak card based on the imported file");
+    await p.screenshot({ path: join(OUT, "pro.png"), fullPage: true });
+    // publish: the tracked link is in the caption
+    const before = published.length;
+    await p.click("dolphin-studio [data-act=schedule-all]");
+    await p.waitForFunction(() => document.querySelector("dolphin-studio").shadowRoot.querySelectorAll(".pill.scheduled").length === 3);
+    const sent = published.slice(before);
+    check(sent.length === 3 && sent.every(x => /👉 https:\/\/acme\.example\/visite\?utm_source=facebook&utm_medium=social&utm_campaign=portes-ouvertes/.test(x.caption)), "pro: captions carry the UTM link");
+    await p.setViewportSize({ width: 390, height: 900 });
+    await p.waitForTimeout(200);
+    check(await p.evaluate(() => document.documentElement.scrollWidth <= 390), "pro: no horizontal scroll on mobile");
+    await p.screenshot({ path: join(OUT, "pro-mobile.png"), fullPage: true });
+    check(errors.length === 0, `pro: no console errors ${errors.join(" | ")}`);
+    await p.close();
+  }
 } finally {
   await browser.close();
   server.close();

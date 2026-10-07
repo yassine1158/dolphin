@@ -4,7 +4,7 @@
 
 DOLPHin écrit les publications d'une entreprise, dessine l'affiche à ses couleurs, puis la publie ou la programme sur sa page Facebook. Il s'installe sur **n'importe quel site web**, quel que soit le langage du serveur : il suffit d'une balise `<script>` et d'un composant `<dolphin-studio>`.
 
-> Statut : **bêta, en phase de test** (v0.3.0).
+> Statut : **bêta, en phase de test** (v0.4.0).
 
 **Page de présentation :** https://yassine1158.github.io/dolphin/
 
@@ -76,7 +76,33 @@ Quand la marque vient du site hôte (`brand` fourni, comme dans un CMS), DOLPHin
 
 ## Publication automatique aux heures de pointe
 
-DOLPHin lit les réactions, commentaires et partages des 100 dernières publications de la page (permission `pages_read_engagement`). Il en déduit les meilleures heures pour chaque jour de la semaine. Avec « Publier aux heures de pointe », activé par défaut, chaque publication de la série est programmée à l'heure de pointe de son jour, puis Facebook la publie tout seul. Si la page a moins de 8 publications, DOLPHin applique une recommandation générale : midi et soirée en semaine, fin de matinée le week-end.
+DOLPHin lit les réactions, commentaires et partages des 300 dernières publications de la page (permission `pages_read_engagement`). Il en déduit les meilleures heures pour chaque jour de la semaine. Avec « Publier aux heures de pointe », activé par défaut, chaque publication de la série est programmée à l'heure de pointe de son jour, puis Facebook la publie tout seul. Si la page a moins de 8 publications, DOLPHin applique une recommandation générale : midi et soirée en semaine, fin de matinée le week-end.
+
+## Ce que disent vos publications (collecte d'informations)
+
+La carte « Ce que disent vos publications » réunit tout ce qu'on sait du public de la page :
+
+- **Chiffres clés** : publications analysées, engagement moyen, rythme (publications par semaine), tendance sur 4 semaines, fiabilité (faible, moyenne, bonne selon la quantité de données et les jours couverts).
+- **Engagement moyen par jour** et **par heure de publication**, avec le meilleur jour et la meilleure tranche de 3 heures.
+- **Les 5 publications qui ont le mieux marché**, avec un lien vers chacune.
+- **Conseils** : rythme trop faible, engagement en baisse ou en hausse, jours jamais testés.
+- **Import CSV** : sans jeton de page, ou pour les **publicités**, importez un export de Meta Business Suite (heure de publication, réactions, commentaires, partages) ou du Gestionnaire de publicités ventilé par heure (« Time of day », résultats ou clics). Les colonnes sont reconnues en français et en anglais. Le fichier reste sur l'appareil. Les données de la page et du fichier sont mises à la même échelle, puis combinées pour les heures de pointe.
+
+## Pour les designers
+
+Chaque affiche se règle dans son panneau « Design » :
+
+- **Format** : publication 4:5 (1080×1350), carré 1:1 (1080×1080) ou story 9:16 (1080×1920).
+- **Mise en page** : classique, centrée, ou minimaliste (grand titre, sans points).
+- **Photo de fond** (JPEG, PNG, WebP), assombrie au réglage voulu pour garder le texte lisible. La photo est réencodée : ses métadonnées (position GPS, appareil) sont supprimées.
+- Logo masquable, **« Version story »** en un clic, **Dupliquer**, export **PNG** ou **JPG**.
+
+## Pour les responsables marketing
+
+- **Objectif de campagne** : faire connaître, faire réagir, visites du site, demandes, ventes, événement ou offre. L'IA adapte le texte et l'appel à l'action.
+- **Clientèle visée** et **offre** de la campagne (l'IA n'utilise que les faits écrits).
+- **Lien suivi** : ajouté à la fin du texte avec `utm_source=facebook`, `utm_medium=social`, `utm_campaign` et `utm_content`, pour mesurer les visites dans Google Analytics.
+- **Calendrier** des 4 prochaines semaines, et **export du planning en CSV** (Excel, Google Sheets). Les cellules qui commencent par `=`, `+`, `-` ou `@` sont neutralisées : un tableur ne peut pas les exécuter comme formules.
 
 ## Pourquoi ça marche avec tous les sites
 
@@ -95,7 +121,7 @@ location /dolphin/ { proxy_pass http://127.0.0.1:8787/; }
 ## Deux modes
 
 - **Proxy (recommandé)** : les clés Claude et Meta restent sur le serveur. Le navigateur n'envoie que la marque et la demande. Fichier : `dolphin.lite.js`, environ 18 Ko gzip.
-- **Direct** : pour une page d'administration privée sans serveur. Les clés sont saisies dans le navigateur, puis chiffrées sur l'appareil (AES-GCM 256, clé dérivée par PBKDF2-SHA256, 310 000 itérations). Fichier : `dolphin.js`, environ 73 Ko gzip, avec le SDK Claude.
+- **Direct** : pour une page d'administration privée sans serveur. Les clés sont saisies dans le navigateur, puis chiffrées sur l'appareil (AES-GCM 256, clé dérivée par PBKDF2-SHA256, 600 000 itérations ; un ancien coffre à 310 000 itérations est rechiffré à l'ouverture). Après 3 phrases fausses, chaque essai attend de plus en plus longtemps. Le studio se verrouille seul après 15 minutes sans activité. Fichier : `dolphin.js`, environ 73 Ko gzip, avec le SDK Claude.
 
 ### Clés gérées par le site hôte
 
@@ -137,7 +163,12 @@ Garanties du cœur :
 
 - En mode proxy, définissez toujours `DOLPHIN_API_TOKEN` et `DOLPHIN_ALLOWED_ORIGINS`.
 - Le jeton est visible par les utilisateurs de la page : intégrez le composant uniquement dans un espace d'administration authentifié.
-- Le serveur limite la taille des requêtes, n'accepte que des images PNG (8 Mo maximum), et compare les jetons en temps constant.
+- Le serveur limite la taille des requêtes (2 Mo pour l'IA, 12 Mo pour les images), n'accepte que des images PNG (8 Mo maximum), et compare les jetons en temps constant, sans révéler leur longueur.
+- **Limite de débit** par adresse IP : 20 requêtes IA par minute (`DOLPHIN_RATE_LIMIT`), 120 pour les autres routes. Derrière un proxy inverse, `DOLPHIN_TRUST_PROXY=1` lit l'IP réelle dans `X-Forwarded-For`.
+- Les requêtes `POST` doivent être en `application/json` (un formulaire d'un autre site ne passe pas). Un navigateur d'une origine non autorisée reçoit `403` avant tout traitement. Un jeton placé dans l'URL est refusé.
+- Chaque réponse porte `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` et une CSP stricte. Les journaux ne contiennent jamais le message d'une erreur interne (il pourrait contenir une clé).
+- `META_APP_SECRET` ajoute `appsecret_proof` à chaque appel Facebook : un jeton volé ne sert à rien sans le secret de l'application (activez « Require App Secret » dans l'application Meta). Le jeton de page voyage dans le corps des publications, jamais dans l'URL d'un lien suivant.
+- Les URL de logo n'acceptent que `http(s)`, un chemin relatif ou une image `data:` ; les liens suivis que `http(s)`. Les publications relues depuis le stockage sont revalidées.
 - Pour une marque fixe côté serveur, utilisez `DOLPHIN_BRAND_FILE` : la marque envoyée par le navigateur est alors ignorée.
 
 ## Développement

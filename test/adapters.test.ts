@@ -64,7 +64,8 @@ describe("MetaPagePublisher", () => {
       { createdTime: "2026-06-02T20:00:00+0000", reactions: 40, comments: 5, shares: 3 },
       { createdTime: "2026-06-03T09:00:00+0000", reactions: 0, comments: 0, shares: 0 },
     ]);
-    expect(decodeURIComponent(asked)).toContain("/published_posts?fields=created_time,shares,reactions.summary(total_count).limit(0)");
+    expect(decodeURIComponent(asked)).toContain("/published_posts?fields=created_time,message,permalink_url,shares,reactions.summary(total_count).limit(0)");
+    expect(asked).toContain("access_token=t");
   });
   it("maps Graph errors", async () => {
     const pub = new MetaPagePublisher({ pageId: "1", accessToken: "t", fetch: (async () => new Response(JSON.stringify({ error: { code: 190, message: "expired" } }), { status: 400 })) as typeof fetch });

@@ -6,8 +6,15 @@ export interface MetaPageOptions {
     /** Page access token with pages_manage_posts. */
     accessToken: string;
     graphVersion?: string;
+    /**
+     * App secret of the Meta app that issued the token (server side only). When set, every call carries
+     * appsecret_proof, so a stolen token cannot be used without the secret. Enable "Require App Secret" in the app.
+     */
+    appSecret?: string;
     fetch?: typeof fetch;
 }
+/** HMAC-SHA256 of the token with the app secret, hex (Meta's appsecret_proof). */
+export declare function appSecretProof(token: string, secret: string): Promise<string>;
 interface GraphError {
     code?: number;
     message?: string;
@@ -23,8 +30,15 @@ export declare class MetaPagePublisher implements PublisherPort {
     verify(): Promise<{
         name: string;
     }>;
-    /** Last 100 published posts with their reactions, comments and shares (needs pages_read_engagement). */
-    history(): Promise<EngagementSample[]>;
+    /**
+     * Published posts with their reactions, comments and shares (needs pages_read_engagement):
+     * up to `max` posts (default 300), following Facebook's pages of 100.
+     */
+    history(max?: number): Promise<EngagementSample[]>;
+    /**
+     * POST sends the token in the form body; GET puts it in the query, as Facebook's CORS rules
+     * require in a browser. URLs with a token are never logged nor put in an error message.
+     */
     private request;
 }
 export declare function graphError(e: GraphError, status?: number): DolphinError;

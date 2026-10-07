@@ -61,9 +61,10 @@ export function snapshotFromDocument(doc: Document, url: string): SiteSnapshot {
   // logo candidates, best first
   const logos: (string | null)[] = [];
   if (structured.logo) logos.push(abs(structured.logo, url));
-  doc.querySelectorAll<HTMLImageElement>("header img, nav img, [class*=logo] img, img[class*=logo], img[id*=logo], img[alt*=logo i], img[src*=logo]").forEach(img => {
-    logos.push(abs(img.getAttribute("src"), url));
-  });
+  // "logo" in the alt text, any case (the `i` selector flag is not supported by every DOM implementation)
+  const LOGO_IMG = "header img, nav img, [class*=logo] img, img[class*=logo], img[id*=logo], img[src*=logo]";
+  const imgs = [...doc.querySelectorAll<HTMLImageElement>(`${LOGO_IMG}, img[alt]`)].filter(img => /logo/i.test(img.alt) || img.matches(LOGO_IMG));
+  imgs.forEach(img => logos.push(abs(img.getAttribute("src"), url)));
   logos.push(abs(meta('meta[property="og:logo"]'), url));
   const icons = [...doc.querySelectorAll<HTMLLinkElement>('link[rel~="apple-touch-icon"], link[rel~="icon"]')]
     .map(l => ({ href: abs(l.getAttribute("href"), url), size: Number.parseInt(l.getAttribute("sizes") ?? "", 10) || (/\.svg(\?|$)/i.test(l.getAttribute("href") ?? "") ? 512 : 32) }))

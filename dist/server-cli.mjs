@@ -17,6 +17,8 @@ var DolphinError = class extends Error {
     this.code = code;
     this.status = status;
   }
+  code;
+  status;
   name = "DolphinError";
   toJSON() {
     return { code: this.code, message: this.message };
@@ -170,48 +172,6 @@ ${known}
 Analyze this business and propose the post ideas.` };
 }
 
-// src/core/prompt.ts
-var LANGUAGE = { fr: "French", en: "English", ar: "Modern Standard Arabic" };
-var line = (label, value) => value ? `${label}: ${value}
-` : "";
-function buildSystemPrompt(brand2) {
-  const rules = brand2.rules ?? {};
-  const available = brand2.products.filter((p) => p.status === "available");
-  const soon = brand2.products.filter((p) => p.status === "soon");
-  const fmt = (p) => `- ${p.name}${p.details ? ` \u2014 ${p.details}` : ""}`;
-  const contact = [brand2.contact.whatsapp && `WhatsApp ${brand2.contact.whatsapp}`, brand2.contact.phone && `phone ${brand2.contact.phone}`, brand2.contact.website].filter(Boolean).join(", ");
-  const hard = [
-    'Only sell what is AVAILABLE. Products coming soon are only announced ("coming soon", "be the first to know"), never sold.',
-    "Never invent facts, figures, promises, awards, discounts or certifications that are not written in this prompt.",
-    "Technical advice must be accurate and cautious.",
-    "Every post differs from the others: angle, title and theme."
-  ];
-  if (rules.hidePrices !== false) hard.push("Never give a price, a minimum quantity, a selling unit or a delivery delay: those are discussed privately with the customer.");
-  for (const topic of rules.neverMention ?? []) hard.push(`Never mention: ${topic}.`);
-  if (brand2.fullName) hard.push(`When the full company name is used, write it exactly: "${brand2.fullName}".`);
-  for (const x of rules.extra ?? []) hard.push(x);
-  return `You are the social media manager of ${brand2.name}${brand2.fullName ? ` (${brand2.fullName})` : ""}.
-You write Facebook and Instagram posts in ${LANGUAGE[brand2.language]}, in simple and warm wording.
-${line("Location", brand2.location)}${line("Audience", brand2.audience)}${line("Contact for the call to action", contact)}
-Available now:
-${available.length ? available.map(fmt).join("\n") : "- (nothing is sold yet: only announce)"}
-${soon.length ? `
-Coming soon:
-${soon.map(fmt).join("\n")}
-` : ""}
-Rules you never break:
-${hard.map((r) => "- " + r).join("\n")}`;
-}
-function buildUserPrompt(req) {
-  const parts = [`Write ${req.count} post(s). They will be published one per day, in order.`];
-  if (req.subject) parts.push(`Subject: ${req.subject}.`);
-  if (req.tone) parts.push(`Tone: ${req.tone}.`);
-  if (req.notes) parts.push(`Instruction from the manager: ${req.notes}`);
-  if (req.avoidTitles?.length) parts.push(`Titles already used, do not repeat them:
-${req.avoidTitles.map((t) => "- " + t).join("\n")}`);
-  return parts.join("\n");
-}
-
 // src/core/schema.ts
 var MAX_POSTS = 10;
 var MAX_POINTS = 5;
@@ -263,6 +223,62 @@ function parseDrafts(value) {
   }).filter((d) => d.title && d.caption);
   if (!drafts.length) throw new DolphinError("invalid_output", "The model answer contains no usable post.");
   return drafts;
+}
+
+// src/core/campaign.ts
+var OBJECTIVES = ["awareness", "engagement", "traffic", "leads", "sales", "event"];
+var OBJECTIVE_BRIEF = {
+  awareness: "make the brand known: memorable, easy to share, one clear message per post",
+  engagement: "start conversations: ask a question or invite a reaction in every post",
+  traffic: "bring people to the website: give a reason to click the link",
+  leads: "get people to write or call: invite them to send a message for information",
+  sales: "sell the available products: benefits, proof from the facts given, a clear call to order",
+  event: "promote the event or offer: what, when, where, and a reminder to come or book"
+};
+
+// src/core/prompt.ts
+var LANGUAGE = { fr: "French", en: "English", ar: "Modern Standard Arabic" };
+var line = (label, value) => value ? `${label}: ${value}
+` : "";
+function buildSystemPrompt(brand2) {
+  const rules = brand2.rules ?? {};
+  const available = brand2.products.filter((p) => p.status === "available");
+  const soon = brand2.products.filter((p) => p.status === "soon");
+  const fmt = (p) => `- ${p.name}${p.details ? ` \u2014 ${p.details}` : ""}`;
+  const contact = [brand2.contact.whatsapp && `WhatsApp ${brand2.contact.whatsapp}`, brand2.contact.phone && `phone ${brand2.contact.phone}`, brand2.contact.website].filter(Boolean).join(", ");
+  const hard = [
+    'Only sell what is AVAILABLE. Products coming soon are only announced ("coming soon", "be the first to know"), never sold.',
+    "Never invent facts, figures, promises, awards, discounts or certifications that are not written in this prompt.",
+    "Technical advice must be accurate and cautious.",
+    "Every post differs from the others: angle, title and theme."
+  ];
+  if (rules.hidePrices !== false) hard.push("Never give a price, a minimum quantity, a selling unit or a delivery delay: those are discussed privately with the customer.");
+  for (const topic of rules.neverMention ?? []) hard.push(`Never mention: ${topic}.`);
+  if (brand2.fullName) hard.push(`When the full company name is used, write it exactly: "${brand2.fullName}".`);
+  for (const x of rules.extra ?? []) hard.push(x);
+  return `You are the social media manager of ${brand2.name}${brand2.fullName ? ` (${brand2.fullName})` : ""}.
+You write Facebook and Instagram posts in ${LANGUAGE[brand2.language]}, in simple and warm wording.
+${line("Location", brand2.location)}${line("Audience", brand2.audience)}${line("Contact for the call to action", contact)}
+Available now:
+${available.length ? available.map(fmt).join("\n") : "- (nothing is sold yet: only announce)"}
+${soon.length ? `
+Coming soon:
+${soon.map(fmt).join("\n")}
+` : ""}
+Rules you never break:
+${hard.map((r) => "- " + r).join("\n")}`;
+}
+function buildUserPrompt(req) {
+  const parts = [`Write ${req.count} post(s). They will be published one per day, in order.`];
+  if (req.objective) parts.push(`Campaign objective: ${OBJECTIVE_BRIEF[req.objective]}.`);
+  if (req.audience) parts.push(`Audience of this campaign: ${req.audience}.`);
+  if (req.offer) parts.push(`Offer or event, as written by the manager (use only these facts): ${req.offer}`);
+  if (req.subject) parts.push(`Subject: ${req.subject}.`);
+  if (req.tone) parts.push(`Tone: ${req.tone}.`);
+  if (req.notes) parts.push(`Instruction from the manager: ${req.notes}`);
+  if (req.avoidTitles?.length) parts.push(`Titles already used, do not repeat them:
+${req.avoidTitles.map((t) => "- " + t).join("\n")}`);
+  return parts.join("\n");
 }
 
 // src/adapters/llm/claude.ts
@@ -345,16 +361,23 @@ function assertSchedulable(at, now = /* @__PURE__ */ new Date()) {
 }
 
 // src/adapters/publish/meta.ts
+async function appSecretProof(token, secret) {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc.encode(token)));
+  return Array.from(sig, (b) => b.toString(16).padStart(2, "0")).join("");
+}
 var MetaPagePublisher = class {
   constructor(opts) {
     this.opts = opts;
     if (!opts.pageId || !opts.accessToken) throw new DolphinError("not_configured", "Facebook page id and access token are required.");
     this.base = `https://graph.facebook.com/${opts.graphVersion ?? "v23.0"}/${encodeURIComponent(opts.pageId)}`;
   }
+  opts;
   base;
   async publish({ image, caption, scheduledAt }) {
     const form = new FormData();
-    form.append("source", image, "dolphin.png");
+    form.append("source", image, image.type === "image/jpeg" ? "dolphin.jpg" : "dolphin.png");
     form.append("message", caption);
     form.append("access_token", this.opts.accessToken);
     if (scheduledAt) {
@@ -367,27 +390,49 @@ var MetaPagePublisher = class {
     return { id: data.post_id ?? data.id ?? "" };
   }
   async verify() {
-    const url = `${this.base}?fields=name&access_token=${encodeURIComponent(this.opts.accessToken)}`;
-    const data = await this.request(url, { method: "GET" });
+    const data = await this.request(`${this.base}?fields=name`, { method: "GET" });
     return { name: data.name ?? "" };
   }
-  /** Last 100 published posts with their reactions, comments and shares (needs pages_read_engagement). */
-  async history() {
-    const fields = "created_time,shares,reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0)";
-    const url = `${this.base}/published_posts?fields=${encodeURIComponent(fields)}&limit=100&access_token=${encodeURIComponent(this.opts.accessToken)}`;
-    const data = await this.request(url, { method: "GET" });
-    return (data.data ?? []).filter((r) => r.created_time).map((r) => ({
+  /**
+   * Published posts with their reactions, comments and shares (needs pages_read_engagement):
+   * up to `max` posts (default 300), following Facebook's pages of 100.
+   */
+  async history(max = 300) {
+    const fields = "created_time,message,permalink_url,shares,reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0)";
+    const rows = [];
+    let url = `${this.base}/published_posts?fields=${encodeURIComponent(fields)}&limit=100`;
+    while (url && rows.length < max) {
+      const data = await this.request(url, { method: "GET" });
+      rows.push(...data.data ?? []);
+      const next = data.paging?.next;
+      url = next && new URL(next).host === "graph.facebook.com" ? stripToken(next) : void 0;
+    }
+    return rows.slice(0, max).filter((r) => r.created_time).map((r) => ({
       createdTime: r.created_time,
       reactions: r.reactions?.summary?.total_count ?? 0,
       comments: r.comments?.summary?.total_count ?? 0,
-      shares: r.shares?.count ?? 0
+      shares: r.shares?.count ?? 0,
+      ...r.message ? { message: r.message.slice(0, 200) } : {},
+      ...r.permalink_url?.startsWith("https://") ? { url: r.permalink_url } : {}
     }));
   }
+  /**
+   * POST sends the token in the form body; GET puts it in the query, as Facebook's CORS rules
+   * require in a browser. URLs with a token are never logged nor put in an error message.
+   */
   async request(url, init) {
     const f = this.opts.fetch ?? globalThis.fetch.bind(globalThis);
+    const u = new URL(url);
+    const proof = this.opts.appSecret ? await appSecretProof(this.opts.accessToken, this.opts.appSecret) : "";
+    if (init.body instanceof FormData) {
+      if (proof) init.body.set("appsecret_proof", proof);
+    } else {
+      u.searchParams.set("access_token", this.opts.accessToken);
+      if (proof) u.searchParams.set("appsecret_proof", proof);
+    }
     let res;
     try {
-      res = await f(url, init);
+      res = await f(u.href, init);
     } catch {
       throw new DolphinError("network", "Cannot reach Facebook.");
     }
@@ -415,6 +460,12 @@ function graphError(e, status) {
       return new DolphinError("unknown", msg, status);
   }
 }
+function stripToken(link) {
+  const u = new URL(link);
+  u.searchParams.delete("access_token");
+  u.searchParams.delete("appsecret_proof");
+  return u.href;
+}
 
 // src/core/brand.ts
 var LANGS2 = ["fr", "en", "ar"];
@@ -439,7 +490,9 @@ var logo = (v, field) => {
     if (!/^data:image\/(png|jpeg|webp|svg\+xml)[;,]/.test(v)) fail(`${field} must be a PNG, JPEG, WebP or SVG image.`);
     return text(v, field, 1e6);
   }
-  return text(v, field, 500);
+  const url = text(v, field, 500);
+  if (url && /^[a-z][a-z0-9+.-]*:/i.test(url) && !/^https?:\/\//i.test(url)) fail(`${field} must be an http(s) or relative URL.`);
+  return url;
 };
 function validateBrand(input) {
   const b = obj(input, "brand");
@@ -502,10 +555,18 @@ function validateGenerateRequest(input) {
   const tone = text(r.tone, "request.tone", 100);
   const notes = text(r.notes, "request.notes", 1e3);
   const avoid = list(r.avoidTitles, "request.avoidTitles", 30, 160);
+  const audience = text(r.audience, "request.audience", 200);
+  const offer = text(r.offer, "request.offer", 500);
   if (subject) req.subject = subject;
   if (tone) req.tone = tone;
   if (notes) req.notes = notes;
   if (avoid) req.avoidTitles = avoid;
+  if (r.objective !== void 0) {
+    if (!OBJECTIVES.includes(r.objective)) fail(`request.objective must be one of ${OBJECTIVES.join(", ")}.`);
+    req.objective = r.objective;
+  }
+  if (audience) req.audience = audience;
+  if (offer) req.offer = offer;
   return req;
 }
 function validateSnapshot(input) {
@@ -533,11 +594,41 @@ function validateSnapshot(input) {
 }
 
 // src/server/index.ts
-import { timingSafeEqual } from "node:crypto";
-var VERSION = "0.3.0";
+import { createHash, timingSafeEqual } from "node:crypto";
+var VERSION = "0.4.0";
 var MAX_IMAGE_BYTES = 8 * 1024 * 1024;
+var MAX_AI_BODY = 2 * 1024 * 1024;
+var EXPENSIVE = /* @__PURE__ */ new Set(["POST /v1/generate", "POST /v1/analyze"]);
+var RateLimiter = class {
+  constructor(perMinute, now = Date.now) {
+    this.perMinute = perMinute;
+    this.now = now;
+  }
+  perMinute;
+  now;
+  hits = /* @__PURE__ */ new Map();
+  allow(key) {
+    const t = this.now(), from = t - 6e4;
+    const list3 = (this.hits.get(key) ?? []).filter((x) => x > from);
+    if (list3.length >= this.perMinute) {
+      this.hits.set(key, list3);
+      return false;
+    }
+    list3.push(t);
+    this.hits.set(key, list3);
+    if (this.hits.size > 1e4) {
+      for (const [k, v] of this.hits) if (!v.some((x) => x > from)) this.hits.delete(k);
+    }
+    return true;
+  }
+};
 function send(res, status, body) {
   res.statusCode = status;
+  res.setHeader("cache-control", "no-store");
+  res.setHeader("x-content-type-options", "nosniff");
+  res.setHeader("x-frame-options", "DENY");
+  res.setHeader("referrer-policy", "no-referrer");
+  res.setHeader("content-security-policy", "default-src 'none'; frame-ancestors 'none'");
   if (body === void 0) {
     res.end();
     return;
@@ -568,14 +659,34 @@ function readJson(req, limit) {
     req.on("error", () => reject(new DolphinError("network", "Connection interrupted.")));
   });
 }
-var sameToken = (given, expected) => {
-  const a = Buffer.from(given), b = Buffer.from(expected);
-  return a.length === b.length && timingSafeEqual(a, b);
-};
+var digest = (s2) => createHash("sha256").update(s2, "utf8").digest();
+var sameToken = (given, expected) => timingSafeEqual(digest(given), digest(expected));
 function createDolphinHandler(opts) {
   const base = (opts.basePath ?? "").replace(/\/+$/, "");
   const limit = opts.maxBodyBytes ?? 12 * 1024 * 1024;
+  const aiLimit = Math.min(limit, MAX_AI_BODY);
   const origins = opts.allowedOrigins ?? [];
+  const limits = opts.rateLimit === false ? null : {
+    expensive: new RateLimiter(opts.rateLimit?.expensive ?? 20),
+    other: new RateLimiter(opts.rateLimit?.other ?? 120)
+  };
+  if (origins.includes("*") && !opts.apiToken) opts.log?.('warning: any website can call this server (allowedOrigins "*" without apiToken)');
+  const clientIp = (req) => {
+    if (opts.trustProxy) {
+      const fwd = String(req.headers["x-forwarded-for"] ?? "").split(",")[0]?.trim();
+      if (fwd) return fwd;
+    }
+    return req.socket?.remoteAddress ?? "unknown";
+  };
+  const foreignOrigin = (req) => {
+    const origin = req.headers.origin;
+    if (!origin || origins.includes("*") || origins.includes(origin)) return false;
+    try {
+      return new URL(origin).host !== req.headers.host;
+    } catch {
+      return true;
+    }
+  };
   const cors = (req, res) => {
     const origin = req.headers.origin;
     if (!origin) return;
@@ -591,13 +702,13 @@ function createDolphinHandler(opts) {
     "GET /v1/health": async () => ({ ok: true, version: VERSION, llm: !!opts.llm, publisher: !!opts.publisher }),
     "POST /v1/generate": async (req) => {
       if (!opts.llm) throw new DolphinError("not_configured", "No language model is configured on the server.");
-      const body = await readJson(req, limit);
+      const body = await readJson(req, aiLimit);
       const brand2 = opts.brand ?? validateBrand(body.brand);
       return opts.llm.generate(brand2, validateGenerateRequest(body.request));
     },
     "POST /v1/analyze": async (req) => {
       if (!opts.llm) throw new DolphinError("not_configured", "No language model is configured on the server.");
-      const body = await readJson(req, limit);
+      const body = await readJson(req, aiLimit);
       const brand2 = opts.brand ?? (body.brand === void 0 ? void 0 : validateBrand(body.brand));
       return opts.llm.analyze(validateSnapshot(body.snapshot), brand2);
     },
@@ -629,6 +740,10 @@ function createDolphinHandler(opts) {
     const started = Date.now();
     cors(req, res);
     const path = (req.url ?? "/").split("?")[0];
+    if (/[?&](token|access_token|key)=/i.test(req.url ?? "")) {
+      send(res, 400, { error: { code: "invalid_request", message: "Send the token in the Authorization header." } });
+      return;
+    }
     const route = path.startsWith(base) ? path.slice(base.length) || "/" : null;
     try {
       if (route === null) throw new DolphinError("invalid_request", "Not found.", 404);
@@ -636,17 +751,27 @@ function createDolphinHandler(opts) {
         send(res, 204);
         return;
       }
-      const fn = routes[`${req.method} ${route}`];
+      const key = `${req.method} ${route}`;
+      const fn = routes[key];
       if (!fn) throw new DolphinError("invalid_request", "Not found.", 404);
+      if (foreignOrigin(req)) throw new DolphinError("permission", "This origin is not allowed.", 403);
+      if (limits && !(EXPENSIVE.has(key) ? limits.expensive : limits.other).allow(`${EXPENSIVE.has(key) ? "x" : "o"}:${clientIp(req)}`)) {
+        res.setHeader("retry-after", "60");
+        throw new DolphinError("rate_limit", "Too many requests: retry in a minute.", 429);
+      }
       if (opts.apiToken && route !== "/v1/health") {
         const auth = req.headers.authorization ?? "";
         if (!auth.startsWith("Bearer ") || !sameToken(auth.slice(7), opts.apiToken)) throw new DolphinError("auth", "Missing or invalid API token.", 401);
       }
+      if (req.method === "POST" && !/^application\/json\b/i.test(req.headers["content-type"] ?? "")) {
+        throw new DolphinError("invalid_request", "Content-Type must be application/json.", 415);
+      }
       send(res, 200, await fn(req));
     } catch (err) {
       const e = isDolphinError(err) ? err : new DolphinError("unknown", "Internal error.");
-      if (!isDolphinError(err)) opts.log?.(`error ${String(err)}`);
-      send(res, e.status && e.status >= 400 ? e.status : HTTP_STATUS[e.code], { error: e.toJSON() });
+      if (!isDolphinError(err)) opts.log?.(`error ${err instanceof Error ? err.name : "unknown"}`);
+      const status = e.status && [404, 413, 415, 429].includes(e.status) ? e.status : HTTP_STATUS[e.code];
+      send(res, status, { error: e.toJSON() });
     } finally {
       opts.log?.(`${req.method} ${path} ${res.statusCode} ${Date.now() - started}ms`);
     }
@@ -657,7 +782,12 @@ function createDolphinHandler(opts) {
 var env = process.env;
 var list2 = (v) => (v ?? "").split(",").map((s2) => s2.trim()).filter(Boolean);
 var llm = env.ANTHROPIC_API_KEY ? new ClaudeLlm({ apiKey: env.ANTHROPIC_API_KEY, ...env.DOLPHIN_MODEL ? { model: env.DOLPHIN_MODEL } : {} }) : void 0;
-var publisher = env.META_PAGE_ID && env.META_PAGE_TOKEN ? new MetaPagePublisher({ pageId: env.META_PAGE_ID, accessToken: env.META_PAGE_TOKEN, ...env.META_GRAPH_VERSION ? { graphVersion: env.META_GRAPH_VERSION } : {} }) : void 0;
+var publisher = env.META_PAGE_ID && env.META_PAGE_TOKEN ? new MetaPagePublisher({
+  pageId: env.META_PAGE_ID,
+  accessToken: env.META_PAGE_TOKEN,
+  ...env.META_GRAPH_VERSION ? { graphVersion: env.META_GRAPH_VERSION } : {},
+  ...env.META_APP_SECRET ? { appSecret: env.META_APP_SECRET } : {}
+}) : void 0;
 var brand = env.DOLPHIN_BRAND_FILE ? validateBrand(JSON.parse(readFileSync(env.DOLPHIN_BRAND_FILE, "utf8"))) : void 0;
 if (!env.DOLPHIN_API_TOKEN) console.warn("[dolphin] DOLPHIN_API_TOKEN is not set: anyone who can reach this server can use your keys.");
 if (!llm) console.warn("[dolphin] ANTHROPIC_API_KEY is not set: /v1/generate is disabled.");
@@ -667,6 +797,8 @@ var handler = createDolphinHandler({
   ...brand ? { brand } : {},
   ...env.DOLPHIN_API_TOKEN ? { apiToken: env.DOLPHIN_API_TOKEN } : {},
   allowedOrigins: list2(env.DOLPHIN_ALLOWED_ORIGINS),
+  rateLimit: env.DOLPHIN_RATE_LIMIT === "0" ? false : { expensive: Number(env.DOLPHIN_RATE_LIMIT) || 20 },
+  trustProxy: env.DOLPHIN_TRUST_PROXY === "1",
   basePath: env.DOLPHIN_BASE_PATH ?? "",
   log: (line2) => console.log(`[dolphin] ${line2}`)
 });

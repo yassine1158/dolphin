@@ -11,6 +11,11 @@ export interface EngagementSample {
   reactions: number;
   comments: number;
   shares: number;
+  /** Ready-made score (e.g. ad results or clicks from an import). Replaces the weighted engagement. */
+  score?: number;
+  /** First words of the post, to show the top posts. */
+  message?: string;
+  url?: string;
 }
 
 export interface PeakSlot {
@@ -22,7 +27,8 @@ export interface PeakSlot {
 }
 
 export interface PeakReport {
-  source: "page" | "default";
+  /** page: the page's own posts; import: a file the user imported; mixed: both; default: general habits. */
+  source: "page" | "import" | "mixed" | "default";
   /** Number of posts the report is based on. */
   samples: number;
   /** grid[day][hour], 0..1 */
@@ -35,8 +41,10 @@ export interface PeakReport {
 
 export const MIN_SAMPLES = 8;
 const DAYS = 7, HOURS = 24;
-const weight = (s: EngagementSample) => s.reactions + 2 * s.comments + 3 * s.shares;
-const mondayFirst = (d: Date) => (d.getDay() + 6) % 7;
+/** Engagement of one post: a comment counts double and a share triple. */
+export const weight = (s: EngagementSample): number =>
+  Math.max(0, Number.isFinite(s.score) ? s.score! : (s.reactions || 0) + 2 * (s.comments || 0) + 3 * (s.shares || 0));
+export const mondayFirst = (d: Date): number => (d.getDay() + 6) % 7;
 
 /** General habits of Facebook audiences (lunch break and evening on weekdays, late morning on weekends). */
 function defaultGrid(): number[][] {
@@ -56,10 +64,10 @@ function pickBest(grid: number[][]): PeakSlot[] {
   return best;
 }
 
-export function analyzePeaks(samples: readonly EngagementSample[], minSamples = MIN_SAMPLES): PeakReport {
+export function analyzePeaks(samples: readonly EngagementSample[], minSamples = MIN_SAMPLES, from: Exclude<PeakReport["source"], "default"> = "page"): PeakReport {
   const valid = samples.filter(s => !Number.isNaN(new Date(s.createdTime).getTime()));
   let grid: number[][];
-  let source: PeakReport["source"] = "page";
+  let source: PeakReport["source"] = from;
   if (valid.length < minSamples) {
     grid = defaultGrid();
     source = "default";

@@ -2,7 +2,8 @@
 // Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 import { DolphinError } from "./errors.js";
 import { MAX_POSTS } from "./schema.js";
-import type { BrandProfile, GenerateRequest, Lang, Product, SiteSnapshot } from "./types.js";
+import { OBJECTIVES } from "./campaign.js";
+import type { BrandProfile, CampaignObjective, GenerateRequest, Lang, Product, SiteSnapshot } from "./types.js";
 
 const LANGS: readonly Lang[] = ["fr", "en", "ar"];
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -22,13 +23,18 @@ const list = (v: unknown, field: string, maxItems: number, maxLen: number): stri
 const obj = (v: unknown, field: string): Record<string, unknown> =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : fail(`${field} must be an object.`);
 
-/** A logo is a URL, or an uploaded image kept as a data URL (at most ~700 KB). */
+/**
+ * A logo is an http(s) or relative URL, or an uploaded image kept as a data URL (at most ~700 KB).
+ * Any other scheme (javascript:, file:, blob:…) is refused.
+ */
 const logo = (v: unknown, field: string): string | undefined => {
   if (typeof v === "string" && v.startsWith("data:")) {
     if (!/^data:image\/(png|jpeg|webp|svg\+xml)[;,]/.test(v)) fail(`${field} must be a PNG, JPEG, WebP or SVG image.`);
     return text(v, field, 1_000_000);
   }
-  return text(v, field, 500);
+  const url = text(v, field, 500);
+  if (url && /^[a-z][a-z0-9+.-]*:/i.test(url) && !/^https?:\/\//i.test(url)) fail(`${field} must be an http(s) or relative URL.`);
+  return url;
 };
 
 /** Validates a brand profile coming from configuration or from the network. */
@@ -93,10 +99,18 @@ export function validateGenerateRequest(input: unknown): GenerateRequest {
   const tone = text(r.tone, "request.tone", 100);
   const notes = text(r.notes, "request.notes", 1000);
   const avoid = list(r.avoidTitles, "request.avoidTitles", 30, 160);
+  const audience = text(r.audience, "request.audience", 200);
+  const offer = text(r.offer, "request.offer", 500);
   if (subject) req.subject = subject;
   if (tone) req.tone = tone;
   if (notes) req.notes = notes;
   if (avoid) req.avoidTitles = avoid;
+  if (r.objective !== undefined) {
+    if (!OBJECTIVES.includes(r.objective as CampaignObjective)) fail(`request.objective must be one of ${OBJECTIVES.join(", ")}.`);
+    req.objective = r.objective as CampaignObjective;
+  }
+  if (audience) req.audience = audience;
+  if (offer) req.offer = offer;
   return req;
 }
 

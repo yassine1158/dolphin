@@ -17,3 +17,8 @@ export declare function logoFromFile(file: File): Promise<{
     logoUrl: string;
     colors: BrandColors;
 }>;
+/**
+ * A background photo chosen by the designer: re-encoded as JPEG (at most 1600 px, under ~1.5 MB),
+ * which also strips the camera metadata (GPS position, device) from the file.
+ */
+export declare function photoFromFile(file: File): Promise<string>;
