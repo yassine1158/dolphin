@@ -145,6 +145,10 @@ npm run demo        # démo locale avec vos vraies clés (.env)
 
 Variables du serveur : voir l'en-tête de [`src/server/cli.ts`](src/server/cli.ts).
 
+## Licence
+
+DOLPHin est un **logiciel propriétaire : tous droits réservés** (voir [LICENSE](LICENSE)). Toute utilisation, sur n'importe quel site, demande un contrat de licence écrit. Les logiciels libres inclus, dont le SDK Claude sous licence MIT, sont listés dans [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
 ---
 
 Conçu et développé par **Yassine Chaabane**.
