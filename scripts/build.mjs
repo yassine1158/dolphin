@@ -1,6 +1,6 @@
 // Builds every distributable from src/. Types are emitted separately by tsc.
 import { build } from "esbuild";
-import { rmSync } from "node:fs";
+import { copyFileSync, rmSync } from "node:fs";
 
 rmSync("dist", { recursive: true, force: true });
 const banner = { js: "/*! DOLPHin 0.3.0 · (c) 2026 Yassine Chaabane · SPDX-License-Identifier: AGPL-3.0-only · Licence commerciale : COMMERCIAL-LICENSE.md · Logiciels tiers : THIRD-PARTY-NOTICES.md */" };
@@ -16,3 +16,7 @@ await Promise.all([
   build({ ...common, entryPoints: ["src/server/index.ts"], outfile: "dist/server.mjs", format: "esm", platform: "node", external: ["@anthropic-ai/sdk"], banner }),
   build({ ...common, entryPoints: ["src/server/cli.ts"], outfile: "dist/server-cli.mjs", format: "esm", platform: "node", external: ["@anthropic-ai/sdk"] }),
 ]);
+
+// presentation page (GitHub Pages, docs/): same widget as the lite build
+copyFileSync("dist/dolphin.lite.js", "docs/dolphin.lite.js");
+

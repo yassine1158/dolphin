@@ -2062,7 +2062,7 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
     else if (this.view === "setup" || this.view === "lock") body = this.lockView();
     else {
       const st = this.studio;
-      body = this.connectionsView() + siteCard({ t: this.t, brand: st.brand, locked: st.brandLocked, saved: st.hasSavedBrand, draft: this.draft, logoCandidates: this.logoCandidates, siteUrl: this.siteUrl, busy: this.busy, canAnalyze: st.canGenerate }) + (this.ready ? ideasCard(this.t, st.ideas, this.busy, st.canGenerate, st.canGenerate) + this.generateView() + this.postsView() : "");
+      body = (this.cfg.showConnections === false ? "" : this.connectionsView()) + siteCard({ t: this.t, brand: st.brand, locked: st.brandLocked, saved: st.hasSavedBrand, draft: this.draft, logoCandidates: this.logoCandidates, siteUrl: this.siteUrl, busy: this.busy, canAnalyze: st.canGenerate }) + (this.ready ? ideasCard(this.t, st.ideas, this.busy, st.canGenerate, st.canGenerate) + this.generateView() + this.postsView() : "");
     }
     this.root.innerHTML = `<style>${STYLES2}${PROFILE_STYLES}</style><div class="wrap">${head}<div class="toast" role="status" hidden></div>${body}</div>`;
     this.drawAll();
