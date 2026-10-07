@@ -4,12 +4,12 @@
  */
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { validateBrand, validateGenerateRequest } from "../core/brand.js";
+import { validateBrand, validateGenerateRequest, validateSnapshot } from "../core/brand.js";
 import { DolphinError, HTTP_STATUS, isDolphinError } from "../core/errors.js";
 import type { BrandProfile } from "../core/types.js";
 import type { LlmPort, PublisherPort } from "../ports/index.js";
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.3.0";
 
 export interface ServerOptions {
   llm?: LlmPort;
@@ -84,6 +84,13 @@ export function createDolphinHandler(opts: ServerOptions): Handler {
       const body = (await readJson(req, limit)) as { brand?: unknown; request?: unknown };
       const brand = opts.brand ?? validateBrand(body.brand);
       return opts.llm.generate(brand, validateGenerateRequest(body.request));
+    },
+
+    "POST /v1/analyze": async req => {
+      if (!opts.llm) throw new DolphinError("not_configured", "No language model is configured on the server.");
+      const body = (await readJson(req, limit)) as { snapshot?: unknown; brand?: unknown };
+      const brand = opts.brand ?? (body.brand === undefined ? undefined : validateBrand(body.brand));
+      return opts.llm.analyze(validateSnapshot(body.snapshot), brand);
     },
 
     "POST /v1/publish": async req => {

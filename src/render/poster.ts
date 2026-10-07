@@ -17,6 +17,8 @@ export const DEFAULT_FONTS: PosterFonts = {
 
 export interface PosterAssets {
   logo?: CanvasImageSource | null;
+  /** Draw the logo on a white plate (a dark logo on a dark background). */
+  logoPlate?: boolean;
   fonts?: PosterFonts;
   /** Small label above the contact number. */
   contactLabel?: string;
@@ -74,7 +76,7 @@ export function drawPoster(ctx: Ctx, post: Post, brand: BrandProfile, assets: Po
   if (assets.logo) {
     const [iw, ih] = sizeOf(assets.logo);
     lw = Math.min(lh * iw / ih, 420);
-    if (T.logo === "plate") { ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.roundRect(x(M - 20, lw + 40), 60, lw + 40, lh + 24, 26); ctx.fill(); }
+    if (T.logo === "plate" || assets.logoPlate) { ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.roundRect(x(M - 20, lw + 40), 60, lw + 40, lh + 24, 26); ctx.fill(); }
     ctx.drawImage(assets.logo, x(M, lw), 72, lw, lh);
   }
   if (post.tag) {
@@ -164,7 +166,7 @@ export function drawPoster(ctx: Ctx, post: Post, brand: BrandProfile, assets: Po
 /** Browser renderer: loads the logo once, waits for fonts, returns a PNG. */
 export class CanvasPosterRenderer implements PosterRenderer {
   private readonly images = new Map<string, Promise<HTMLImageElement | null>>();
-  constructor(private readonly options: { fonts?: PosterFonts; contactLabel?: string } = {}) {}
+  constructor(private readonly options: { fonts?: PosterFonts; contactLabel?: string | ((brand: BrandProfile) => string | undefined) } = {}) {}
 
   private loadImage(url?: string): Promise<HTMLImageElement | null> {
     if (!url) return Promise.resolve(null);
@@ -191,10 +193,13 @@ export class CanvasPosterRenderer implements PosterRenderer {
     const fonts = this.options.fonts ?? DEFAULT_FONTS;
     await Promise.all([`800 80px ${fonts.display}`, `700 40px ${fonts.body}`].map(f => document.fonts?.load(f).catch(() => undefined)));
     const logo = await this.logoFor(post, brand);
+    // no light version of the logo for dark posters: keep it readable on a white plate
+    const logoPlate = paletteFor(brand.colors, post.theme).logo === "onDark" && !brand.logoOnDarkUrl;
     canvas.width = POSTER_WIDTH; canvas.height = POSTER_HEIGHT;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas 2D is not available.");
-    drawPoster(ctx, post, brand, { logo, fonts, ...(this.options.contactLabel ? { contactLabel: this.options.contactLabel } : {}) });
+    const label = typeof this.options.contactLabel === "function" ? this.options.contactLabel(brand) : this.options.contactLabel;
+    drawPoster(ctx, post, brand, { logo, logoPlate, fonts, ...(label ? { contactLabel: label } : {}) });
   }
 
   async render(post: Post, brand: BrandProfile): Promise<Blob> {

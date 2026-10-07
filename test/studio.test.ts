@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { MemoryStore } from "../src/adapters/storage/index.js";
 import { DolphinStudio } from "../src/app/studio.js";
 import { DolphinError } from "../src/core/errors.js";
-import { FakeLlm, FakePublisher, FakeRenderer, brand } from "./fixtures.js";
+import { FakeLlm, FakePublisher, FakeRenderer, brand, draft } from "./fixtures.js";
 
 const NOW = new Date(2026, 5, 10, 12, 0);
 let n = 0;
@@ -22,6 +22,12 @@ describe("DolphinStudio", () => {
     expect(posts.every(p => p.status === "draft")).toBe(true);
     const again = new DolphinStudio({ brand, renderer: new FakeRenderer(), store });
     expect(await again.load()).toHaveLength(3);
+  });
+
+  it("never keeps more posts than asked", async () => {
+    const { studio, llm } = make();
+    (llm as unknown as { generate: unknown }).generate = async () => ({ drafts: [1, 2, 3].map(draft), usage: { inputTokens: 1, outputTokens: 1 }, model: "m" });
+    expect((await studio.generate({ count: 1 })).posts).toHaveLength(1);
   });
 
   it("sends previous titles so the model does not repeat itself", async () => {
@@ -69,4 +75,27 @@ describe("DolphinStudio", () => {
     await studio.clear();
     expect(calls).toBe(1);
   });
+
+  it("analyzes a site and keeps the ideas", async () => {
+    const { studio, llm, store } = make();
+    await studio.load();
+    const r = await studio.analyze({ url: "https://x.ci", headings: [], text: "", phones: [], whatsapp: [], emails: [], logoCandidates: [], structured: {} });
+    expect(r.brand.name).toBe("Le Fournil");
+    expect(llm.analyzed[0]![1]).toBeUndefined(); // no saved profile yet: the model proposes one
+    expect(studio.ideas[0]!.title).toBe("Le pain du matin");
+    await studio.setBrand({ ...brand, name: "Le Fournil", id: "ignored" });
+    expect(studio.brand.id).toBe("acme");
+    const again = new DolphinStudio({ brand, renderer: new FakeRenderer(), store, llm });
+    await again.load();
+    expect(again.brand.name).toBe("Le Fournil");
+    expect(again.ideas).toHaveLength(1);
+    await again.analyze({ url: "https://x.ci", headings: [], text: "", phones: [], whatsapp: [], emails: [], logoCandidates: [], structured: {} });
+    expect(llm.analyzed[1]![1]!.name).toBe("Le Fournil"); // saved profile is sent as the truth
+  });
+
+  it("never replaces a brand owned by the host", async () => {
+    const { studio } = make({ brandLocked: true });
+    await expect(studio.setBrand(brand)).rejects.toMatchObject({ code: "invalid_request" });
+  });
 });
+

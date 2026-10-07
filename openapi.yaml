@@ -1,11 +1,11 @@
 openapi: 3.1.0
 info:
   title: DOLPHin API
-  version: 0.2.0
+  version: 0.3.0
   description: |
     Contract between the <dolphin-studio> widget (proxy mode) and a server that holds the keys.
     The reference implementation is `dolphin-server` (Node). Any backend (PHP, Python, Java, Go, .NET…)
-    can implement these four routes to host DOLPHin.
+    can implement these five routes to host DOLPHin.
     Errors always have the shape `{ "error": { "code": ErrorCode, "message": string } }`.
 servers:
   - url: http://localhost:8787
@@ -48,6 +48,27 @@ paths:
           content:
             application/json:
               schema: { $ref: "#/components/schemas/GenerateResult" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/analyze:
+    post:
+      summary: Understand a website (brand proposal and post ideas)
+      description: The page snapshot is untrusted content; the server bounds it and the model is told to treat it as data.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [snapshot]
+              properties:
+                snapshot: { $ref: "#/components/schemas/SiteSnapshot" }
+                brand: { $ref: "#/components/schemas/BrandProfile", description: "Existing profile, used as the truth" }
+      responses:
+        "200":
+          description: Analysis
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AnalyzeResult" }
         default: { $ref: "#/components/responses/Error" }
   /v1/publish:
     post:
@@ -172,6 +193,45 @@ components:
         usage:
           type: object
           required: [inputTokens, outputTokens]
+          properties:
+            inputTokens: { type: integer }
+            outputTokens: { type: integer }
+        model: { type: string }
+    SiteSnapshot:
+      type: object
+      required: [url, headings, text, phones, whatsapp, emails, logoCandidates, structured]
+      properties:
+        url: { type: string }
+        lang: { type: string }
+        title: { type: string }
+        description: { type: string }
+        siteName: { type: string }
+        themeColor: { type: string }
+        headings: { type: array, maxItems: 40, items: { type: string } }
+        text: { type: string, maxLength: 8000 }
+        phones: { type: array, items: { type: string } }
+        whatsapp: { type: array, items: { type: string } }
+        emails: { type: array, items: { type: string } }
+        logoCandidates: { type: array, items: { type: string } }
+        structured: { type: object, additionalProperties: { type: string } }
+    PostIdea:
+      type: object
+      required: [title, angle, why]
+      properties:
+        title: { type: string }
+        angle: { type: string }
+        product: { type: string }
+        why: { type: string }
+    AnalyzeResult:
+      type: object
+      required: [brand, ideas, usage, model]
+      properties:
+        brand:
+          type: object
+          description: Brand proposal (name, fullName, location, audience, language, products, contact)
+        ideas: { type: array, items: { $ref: "#/components/schemas/PostIdea" } }
+        usage:
+          type: object
           properties:
             inputTokens: { type: integer }
             outputTokens: { type: integer }

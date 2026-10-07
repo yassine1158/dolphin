@@ -46,6 +46,13 @@ describe("server", () => {
     expect(publisher.sent[0]!.image.size).toBe(PNG.length);
     expect(await new HttpPublisher(http).verify()).toEqual({ name: "Page ACME" });
   });
+  it("analyzes a snapshot", async () => {
+    const r = await new HttpLlm({ endpoint: url, token: "secret-token" }).analyze({ url: "https://x.ci", headings: ["h"], text: "t", phones: [], whatsapp: [], emails: [], logoCandidates: [], structured: {} });
+    expect(r.brand.name).toBe("Le Fournil");
+    expect(r.ideas).toHaveLength(1);
+    const bad = await post("/v1/analyze", { snapshot: { url: "x", text: "y".repeat(9000) } });
+    expect(bad.status).toBe(400);
+  });
   it("rejects non-PNG images", async () => {
     const r = await post("/v1/publish", { imageBase64: Buffer.from("GIF89a").toString("base64"), caption: "x" });
     expect((await r.json()).error.message).toMatch(/PNG/);
