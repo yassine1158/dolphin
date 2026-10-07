@@ -121,8 +121,9 @@ export class DolphinStudio {
     const result = await this.deps.llm.generate(this.brand, { ...opts, count, avoidTitles });
     const now = this.now();
     const start = opts.startDate ?? new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-    const slots = planSchedule(result.drafts.length, start, opts.time, opts.everyDays);
-    const created = result.drafts.map((d, i): Post => ({
+    const drafts = result.drafts.slice(0, count); // never more than asked, whatever the model returns
+    const slots = planSchedule(drafts.length, start, opts.time, opts.everyDays);
+    const created = drafts.map((d, i): Post => ({
       ...d, id: this.newId(), createdAt: now.toISOString(), scheduledAt: slots[i]!.toISOString(), status: "draft",
     }));
     this.posts = [...this.posts, ...created];
