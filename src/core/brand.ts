@@ -1,6 +1,6 @@
 import { DolphinError } from "./errors.js";
 import { MAX_POSTS } from "./schema.js";
-import type { BrandProfile, GenerateRequest, Lang, Product } from "./types.js";
+import type { BrandProfile, GenerateRequest, Lang, Product, SiteSnapshot } from "./types.js";
 
 const LANGS: readonly Lang[] = ["fr", "en", "ar"];
 const HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -19,6 +19,15 @@ const list = (v: unknown, field: string, maxItems: number, maxLen: number): stri
 };
 const obj = (v: unknown, field: string): Record<string, unknown> =>
   v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : fail(`${field} must be an object.`);
+
+/** A logo is a URL, or an uploaded image kept as a data URL (at most ~700 KB). */
+const logo = (v: unknown, field: string): string | undefined => {
+  if (typeof v === "string" && v.startsWith("data:")) {
+    if (!/^data:image\/(png|jpeg|webp|svg\+xml)[;,]/.test(v)) fail(`${field} must be a PNG, JPEG, WebP or SVG image.`);
+    return text(v, field, 1_000_000);
+  }
+  return text(v, field, 500);
+};
 
 /** Validates a brand profile coming from configuration or from the network. */
 export function validateBrand(input: unknown): BrandProfile {
@@ -53,8 +62,8 @@ export function validateBrand(input: unknown): BrandProfile {
   opt("fullName", text(b.fullName, "brand.fullName", 120));
   opt("location", text(b.location, "brand.location", 120));
   opt("audience", text(b.audience, "brand.audience", 200));
-  opt("logoUrl", text(b.logoUrl, "brand.logoUrl", 500));
-  opt("logoOnDarkUrl", text(b.logoOnDarkUrl, "brand.logoOnDarkUrl", 500));
+  opt("logoUrl", logo(b.logoUrl, "brand.logoUrl"));
+  opt("logoOnDarkUrl", logo(b.logoOnDarkUrl, "brand.logoOnDarkUrl"));
   if (footer?.length) brand.footerLines = [footer[0]!, footer[1]];
   const light = color(colors.light, "brand.colors.light", false);
   if (light) brand.colors.light = light;
@@ -87,4 +96,29 @@ export function validateGenerateRequest(input: unknown): GenerateRequest {
   if (notes) req.notes = notes;
   if (avoid) req.avoidTitles = avoid;
   return req;
+}
+
+/** Validates a page snapshot sent by a browser before it reaches the model. */
+export function validateSnapshot(input: unknown): SiteSnapshot {
+  const v = obj(input, "snapshot");
+  const snap: SiteSnapshot = {
+    url: text(v.url, "snapshot.url", 500, true)!,
+    headings: list(v.headings, "snapshot.headings", 40, 200) ?? [],
+    text: text(v.text, "snapshot.text", 8000) ?? "",
+    phones: list(v.phones, "snapshot.phones", 10, 40) ?? [],
+    whatsapp: list(v.whatsapp, "snapshot.whatsapp", 10, 40) ?? [],
+    emails: list(v.emails, "snapshot.emails", 10, 120) ?? [],
+    logoCandidates: list(v.logoCandidates, "snapshot.logoCandidates", 10, 1000) ?? [],
+    structured: {},
+  };
+  for (const k of ["lang", "title", "description", "siteName", "themeColor"] as const) {
+    const t = text(v[k], `snapshot.${k}`, 400);
+    if (t) snap[k] = t;
+  }
+  const st = v.structured === undefined ? {} : obj(v.structured, "snapshot.structured");
+  for (const [k, val] of Object.entries(st).slice(0, 20)) {
+    const t = text(val, `snapshot.structured.${k}`, 400);
+    if (t) snap.structured[k.slice(0, 40)] = t;
+  }
+  return snap;
 }

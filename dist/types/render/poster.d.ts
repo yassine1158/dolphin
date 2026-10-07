@@ -9,6 +9,8 @@ export interface PosterFonts {
 export declare const DEFAULT_FONTS: PosterFonts;
 export interface PosterAssets {
     logo?: CanvasImageSource | null;
+    /** Draw the logo on a white plate (a dark logo on a dark background). */
+    logoPlate?: boolean;
     fonts?: PosterFonts;
     /** Small label above the contact number. */
     contactLabel?: string;
@@ -26,7 +28,7 @@ export declare class CanvasPosterRenderer implements PosterRenderer {
     private readonly images;
     constructor(options?: {
         fonts?: PosterFonts;
-        contactLabel?: string;
+        contactLabel?: string | ((brand: BrandProfile) => string | undefined);
     });
     private loadImage;
     logoFor(post: Post, brand: BrandProfile): Promise<HTMLImageElement | null>;
