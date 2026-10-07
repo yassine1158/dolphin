@@ -1,4 +1,4 @@
-/*! DOLPHin 0.1.0 · (c) Yassine Chaabane */
+/*! DOLPHin 0.2.0 · (c) Yassine Chaabane */
 
 // src/core/errors.ts
 var DolphinError = class extends Error {
@@ -1336,6 +1336,9 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
   get mode() {
     return this.cfg.mode ?? (this.cfg.endpoint ? "proxy" : "direct");
   }
+  get hostManaged() {
+    return this.mode === "direct" && !!this.cfg?.secrets;
+  }
   get model() {
     return this.cfg?.model ?? DEFAULT_MODEL;
   }
@@ -1367,6 +1370,10 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
       }
       this.studio.connect({ llm: new HttpLlm(http), ...publisher ? { publisher: new HttpPublisher(http) } : {} });
       this.view = "main";
+    } else if (this.hostManaged) {
+      this.secrets = { ...cfg.secrets };
+      this.applySecrets();
+      this.view = "main";
     } else {
       this.vault = new Vault(this.store);
       this.view = await this.vault.exists() ? "lock" : "setup";
@@ -1377,7 +1384,7 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
   render() {
     const t = this.t;
     const head = `<header>${MARK_SVG}<div><h2>DOLPH<b>in</b></h2><p>${esc(t.tagline)}</p></div><span class="badge">${esc(t.beta)}</span>
-      ${this.view === "main" && this.mode === "direct" ? `<button class="end" data-act="lock">${esc(t.lock)}</button>` : ""}</header>`;
+      ${this.view === "main" && this.mode === "direct" && !this.hostManaged ? `<button class="end" data-act="lock">${esc(t.lock)}</button>` : ""}</header>`;
     let body = "";
     if (this.view === "loading") body = "";
     else if (this.view === "setup" || this.view === "lock") body = this.lockView();
@@ -1602,7 +1609,8 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
     if (read("claudeKey")) next.claudeKey = read("claudeKey");
     if (read("metaToken")) next.metaToken = read("metaToken");
     next.metaPageId = read("metaPageId");
-    await this.vault.seal(this.passphrase, next);
+    if (this.hostManaged) await this.cfg.onSecretsChange?.(next);
+    else await this.vault.seal(this.passphrase, next);
     this.secrets = next;
     this.applySecrets();
     this.render();

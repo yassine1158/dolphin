@@ -2,7 +2,7 @@
 
 DOLPHin écrit les publications d'une entreprise, dessine l'affiche à ses couleurs, puis la publie ou la programme sur sa page Facebook. Il s'installe sur **n'importe quel site web**, quel que soit le langage du serveur : il suffit d'une balise `<script>` et d'un composant `<dolphin-studio>`.
 
-> Statut : **bêta, en phase de test** (v0.1.0).
+> Statut : **bêta, en phase de test** (v0.2.0).
 
 ## Essayer en 2 minutes (sur votre ordinateur)
 
@@ -71,6 +71,19 @@ location /dolphin/ { proxy_pass http://127.0.0.1:8787/; }
 
 - **Proxy (recommandé)** : les clés Claude et Meta restent sur le serveur. Le navigateur n'envoie que la marque et la demande. Fichier : `dolphin.lite.js`, environ 18 Ko gzip.
 - **Direct** : pour une page d'administration privée sans serveur. Les clés sont saisies dans le navigateur, puis chiffrées sur l'appareil (AES-GCM 256, clé dérivée par PBKDF2-SHA256, 310 000 itérations). Fichier : `dolphin.js`, environ 73 Ko gzip, avec le SDK Claude.
+
+### Clés gérées par le site hôte
+
+Si votre administration a déjà sa propre connexion et son propre stockage chiffré, passez les clés au composant. L'écran de phrase secrète disparaît, et le composant vous prévient quand l'utilisateur change une clé :
+
+```js
+Dolphin.mount("#studio", {
+  mode: "direct",
+  brand,
+  secrets: { claudeKey, metaPageId, metaToken },
+  onSecretsChange: async next => { /* enregistrez `next` dans votre coffre */ },
+});
+```
 
 ## Architecture
 

@@ -1,6 +1,6 @@
 {
   "name": "@dolphin/studio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "DOLPHin : moteur de contenu marketing IA intégrable à n'importe quel site web (génération, affiche, publication Meta).",
   "type": "module",
   "private": true,
