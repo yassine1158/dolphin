@@ -1,5 +1,5 @@
 import { DolphinError } from "../core/errors.js";
-import type { BrandProfile, GenerateRequest, Post, PostDraft, Usage } from "../core/types.js";
+import type { AnalyzeResult, BrandProfile, GenerateRequest, Post, PostDraft, PostIdea, SiteSnapshot, Usage } from "../core/types.js";
 import type { KeyValueStore, LlmPort, PosterRenderer, PublisherPort } from "../ports/index.js";
 export interface StudioDeps {
     brand: BrandProfile;
@@ -9,6 +9,8 @@ export interface StudioDeps {
     publisher?: PublisherPort;
     now?: () => Date;
     newId?: () => string;
+    /** The host owns the brand (e.g. built from its CMS): the studio never replaces it. */
+    brandLocked?: boolean;
 }
 export interface GenerateOptions extends GenerateRequest {
     /** First day of the plan (date part is used). Default: tomorrow. */
@@ -37,6 +39,8 @@ export declare class DolphinStudio {
     private readonly now;
     private readonly newId;
     private loaded;
+    private ideaList;
+    private readonly ns;
     constructor(deps: StudioDeps);
     get brand(): BrandProfile;
     get canGenerate(): boolean;
@@ -44,7 +48,15 @@ export declare class DolphinStudio {
     /** Swap adapters at runtime (e.g. after the user unlocks their keys). */
     connect(adapters: Pick<StudioDeps, "llm" | "publisher">): void;
     onChange(fn: Listener): () => void;
+    get brandLocked(): boolean;
+    get ideas(): readonly PostIdea[];
+    /** True once the owner saved a profile (or the host provides one). */
+    hasSavedBrand: boolean;
     load(): Promise<readonly Post[]>;
+    /** Saves the brand profile edited by the owner. */
+    setBrand(brand: BrandProfile): Promise<BrandProfile>;
+    /** Reads the site through the model: a brand proposal (unless locked) and post ideas. */
+    analyze(snapshot: SiteSnapshot): Promise<AnalyzeResult>;
     list(): readonly Post[];
     get(id: string): Post | undefined;
     generate(opts: GenerateOptions): Promise<{

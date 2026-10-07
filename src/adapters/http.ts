@@ -3,8 +3,9 @@
  * that holds the keys. Contract: openapi.yaml.
  */
 import { DolphinError, type DolphinErrorCode } from "../core/errors.js";
+import { parseAnalysis } from "../core/analysis.js";
 import { parseDrafts } from "../core/schema.js";
-import type { BrandProfile, GenerateRequest, GenerateResult } from "../core/types.js";
+import type { AnalyzeResult, BrandProfile, GenerateRequest, GenerateResult, SiteSnapshot } from "../core/types.js";
 import type { LlmPort, PublishInput, PublisherPort } from "../ports/index.js";
 
 export interface HttpOptions {
@@ -38,6 +39,11 @@ export class HttpLlm implements LlmPort {
   async generate(brand: BrandProfile, request: GenerateRequest): Promise<GenerateResult> {
     const r = await call<GenerateResult>(this.opts, "POST", "/v1/generate", { brand, request });
     return { drafts: parseDrafts({ posts: r.drafts }), usage: r.usage, model: r.model };
+  }
+
+  async analyze(snapshot: SiteSnapshot, brand?: BrandProfile): Promise<AnalyzeResult> {
+    const r = await call<AnalyzeResult>(this.opts, "POST", "/v1/analyze", { snapshot, ...(brand ? { brand } : {}) });
+    return { ...parseAnalysis(r), usage: r.usage, model: r.model };
   }
 }
 

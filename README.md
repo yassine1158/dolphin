@@ -2,7 +2,7 @@
 
 DOLPHin écrit les publications d'une entreprise, dessine l'affiche à ses couleurs, puis la publie ou la programme sur sa page Facebook. Il s'installe sur **n'importe quel site web**, quel que soit le langage du serveur : il suffit d'une balise `<script>` et d'un composant `<dolphin-studio>`.
 
-> Statut : **bêta, en phase de test** (v0.2.0).
+> Statut : **bêta, en phase de test** (v0.3.0).
 
 ## Essayer en 2 minutes (sur votre ordinateur)
 
@@ -51,14 +51,31 @@ DOLPHIN_API_TOKEN=un-secret-long DOLPHIN_ALLOWED_ORIGINS=https://www.votre-site.
 npx dolphin-server
 ```
 
-On peut aussi monter le composant en JavaScript avec `Dolphin.mount("#studio", config)`. Exemples complets dans [`examples/`](examples) : HTML simple, mode direct, React/Next.js, extension WordPress.
+On peut aussi monter le composant en JavaScript avec `Dolphin.mount("#studio", config)`. Exemples complets dans [`examples/`](examples) : HTML simple, analyse automatique d'un site (`examples/auto`), mode direct, React/Next.js, extension WordPress.
+
+## DOLPHin comprend votre site tout seul
+
+Il n'est pas nécessaire de décrire la marque : sans `brand` dans la configuration, DOLPHin lit le site, puis propose tout lui-même.
+
+```html
+<dolphin-studio>
+  <script type="application/json">{ "endpoint": "https://api.votre-site.com/dolphin", "token": "…", "siteUrl": "/" }</script>
+</dolphin-studio>
+```
+
+1. **Lecture du site** (`siteUrl`, par défaut la page d'accueil) : titre, description, données schema.org, titres, texte, téléphones, liens WhatsApp, e-mails et logos possibles.
+2. **Compréhension par Claude** : activité, clientèle, ville, produits disponibles ou à venir, appel à l'action, plus **6 à 8 idées de publications**, chacune avec son angle et la raison de la publier. Le contenu de la page est traité comme une donnée, jamais comme une instruction.
+3. **Logo et couleurs** : le logo est repris du site, en cherchant dans cet ordre schema.org, l'en-tête, les icônes puis l'image de partage. Les couleurs sont extraites du logo. Vous pouvez aussi **envoyer votre propre logo** (PNG, JPEG, WebP ou SVG).
+4. **Vous vérifiez, corrigez et enregistrez le profil.** Ensuite, « Écrire ce post » transforme une idée en publication avec son affiche.
+
+Quand la marque vient du site hôte (`brand` fourni, comme dans un CMS), DOLPHin ne la modifie jamais : il propose seulement des idées.
 
 ## Pourquoi ça marche avec tous les sites
 
 | Couche | Ce qui la rend universelle |
 |---|---|
 | **Interface** | Web Component standard avec Shadow DOM : aucun conflit de CSS ou de JavaScript avec le site, aucun framework requis. Fonctionne en HTML simple, WordPress, PHP, Django, Rails, Laravel, React, Vue, Angular. |
-| **Serveur** | Contrat REST décrit dans [`openapi.yaml`](openapi.yaml), 4 routes. Utilisez `dolphin-server` (Node, sans dépendance de framework), placez-le derrière votre serveur actuel (nginx, Apache…), ou réimplémentez les 4 routes dans votre langage. |
+| **Serveur** | Contrat REST décrit dans [`openapi.yaml`](openapi.yaml), 5 routes. Utilisez `dolphin-server` (Node, sans dépendance de framework), placez-le derrière votre serveur actuel (nginx, Apache…), ou réimplémentez les 5 routes dans votre langage. |
 | **Langues** | Interface en français, anglais et arabe (de droite à gauche). Les publications sont écrites dans la langue de la marque. |
 
 Exemple nginx, pour servir DOLPHin sous le même domaine qu'un site PHP, Python ou autre :
@@ -120,9 +137,9 @@ Garanties du cœur :
 ```bash
 npm install
 npm run typecheck   # TypeScript strict
-npm test            # 31 tests unitaires (cœur, adaptateurs, serveur)
+npm test            # 42 tests unitaires (cœur, analyse, couleurs, adaptateurs, serveur)
 npm run build       # dist/: dolphin.js, dolphin.lite.js, dolphin.esm.js, server.mjs, types
-npm run e2e         # navigateur réel : mode proxy, mode direct, arabe (nécessite Playwright)
+npm run e2e         # navigateur réel : proxy, direct, clés de l'hôte, analyse du site, arabe (Playwright)
 npm run demo        # démo locale avec vos vraies clés (.env)
 ```
 

@@ -111,3 +111,43 @@ export interface GenerateResult {
   usage: Usage;
   model: string;
 }
+
+/** What DOLPHin reads from a website page before asking the model to understand it. */
+export interface SiteSnapshot {
+  url: string;
+  lang?: string;
+  title?: string;
+  description?: string;
+  siteName?: string;
+  themeColor?: string;
+  headings: string[];
+  /** Visible text, trimmed to a few thousand characters. */
+  text: string;
+  phones: string[];
+  whatsapp: string[];
+  emails: string[];
+  /** Absolute URLs, best candidate first. */
+  logoCandidates: string[];
+  /** Name, address, phone… found in schema.org JSON-LD. */
+  structured: Record<string, string>;
+}
+
+/** A post the model proposes to write. */
+export interface PostIdea {
+  title: string;
+  angle: string;
+  /** Product concerned, if any. */
+  product?: string;
+  why: string;
+}
+
+/** Brand fields the model can infer from a site. Colors and logo come from the page itself. */
+export type BrandProposal = Pick<BrandProfile, "name" | "language" | "products"> &
+  Partial<Pick<BrandProfile, "fullName" | "location" | "audience">> & { contact: BrandContact };
+
+export interface AnalyzeResult {
+  brand: BrandProposal;
+  ideas: PostIdea[];
+  usage: Usage;
+  model: string;
+}

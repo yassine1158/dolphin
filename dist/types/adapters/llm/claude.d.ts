@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { DolphinError } from "../../core/errors.js";
-import type { BrandProfile, GenerateRequest, GenerateResult } from "../../core/types.js";
+import type { AnalyzeResult, BrandProfile, GenerateRequest, GenerateResult, SiteSnapshot } from "../../core/types.js";
 import type { LlmPort } from "../../ports/index.js";
 /** The part of the SDK client this adapter uses; lets tests inject a fake. */
 export interface MessagesClient {
@@ -20,5 +20,8 @@ export declare class ClaudeLlm implements LlmPort {
     private readonly maxTokens;
     constructor(opts?: ClaudeLlmOptions);
     generate(brand: BrandProfile, request: GenerateRequest): Promise<GenerateResult>;
+    analyze(snapshot: SiteSnapshot, brand?: BrandProfile): Promise<AnalyzeResult>;
+    /** One structured-output call: streaming (avoids HTTP timeouts), then JSON parsing. */
+    private run;
 }
 export declare function toDolphinError(err: unknown): DolphinError;

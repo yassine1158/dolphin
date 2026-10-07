@@ -3,7 +3,15 @@ import { type StudioDeps } from "../app/studio.js";
 import type { BrandProfile, Lang } from "../core/types.js";
 import { type PosterFonts } from "../render/poster.js";
 export interface DolphinConfig {
-    brand: BrandProfile;
+    /**
+     * Brand profile owned by the host (built from its CMS, for example). Without it, DOLPHin reads
+     * the website (`siteUrl`), proposes a profile with logo and colors, and the owner saves it.
+     */
+    brand?: BrandProfile;
+    /** Page DOLPHin reads to understand the business. Default: the home page of this site. */
+    siteUrl?: string;
+    /** Storage namespace when no brand is given. Default: derived from the host name. */
+    id?: string;
     /** "proxy" (recommended): keys on your server. "direct": keys typed in the browser, encrypted locally. */
     mode?: "proxy" | "direct";
     /** DOLPHin server URL (proxy mode). */
@@ -41,6 +49,10 @@ export declare class DolphinStudioElement extends HTMLElement {
     private prefs;
     private toastTimer;
     private redraw;
+    /** Profile being reviewed before it is saved. */
+    private draft;
+    private logoCandidates;
+    private siteUrl;
     constructor();
     connectedCallback(): void;
     get config(): DolphinConfig | undefined;
@@ -49,6 +61,9 @@ export declare class DolphinStudioElement extends HTMLElement {
     private get hostManaged();
     private get model();
     private init;
+    /** The interface takes the colors of the current brand. */
+    private applyBrandLook;
+    private get ready();
     private render;
     private lockView;
     private connectionsView;
@@ -67,6 +82,11 @@ export declare class DolphinStudioElement extends HTMLElement {
     private saveKeys;
     private testConnections;
     private generate;
+    /** Reads the site, then shows the proposed profile (`withProfile`) or only refreshes the ideas. */
+    private analyze;
+    private pickLogo;
+    private saveProfile;
+    private writeIdea;
     private download;
     private sendPosts;
 }
