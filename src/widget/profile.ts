@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 /** Markup of the "Your website" and "Post ideas" cards. Pure functions: state in, HTML out. */
 import type { BrandProfile, PostIdea } from "../core/types.js";
 import type { Messages } from "./i18n.js";

@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 /**
  * dolphin-server: ready-to-run proxy. Configuration through environment variables:
  *   ANTHROPIC_API_KEY       Claude API key (required to generate)

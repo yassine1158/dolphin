@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 /**
  * DOLPHin — public API (ESM). Layers:
  *   core/      domain model, rules, prompts, schema, scheduling (pure)

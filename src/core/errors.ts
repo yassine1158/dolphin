@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 export type DolphinErrorCode =
   | "auth"            // invalid or expired key / token
   | "permission"      // valid credentials, missing permission
