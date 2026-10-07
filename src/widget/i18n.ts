@@ -4,6 +4,11 @@ import type { DolphinErrorCode } from "../core/errors.js";
 import type { Lang } from "../core/types.js";
 
 const fr = {
+  peakTitle: "Meilleurs moments pour publier", peakAnalyze: "Analyser ma page", peakRefresh: "Mettre à jour", peakBusy: "Analyse de la page…",
+  peakIntro: "DOLPHin regarde quand vos publications passées ont fait le plus de réactions, commentaires et partages, puis publie aux heures de pointe.",
+  peakFromPage: "Calculé à partir de {n} publications de votre page.", peakDefault: "Recommandation générale : pas assez de publications à analyser sur votre page pour l'instant.",
+  peakBest: "Heures de pointe", peakLess: "moins", peakMore: "plus d'engagement", peakReady: "Heures de pointe calculées.",
+  autoTime: "Publier aux heures de pointe (automatique)", days: ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"], hourShort: "{h} h",
   analyzed: "Site analysé : {n} idée(s) proposée(s).",
   site: "Votre site", siteIntro: "DOLPHin lit votre site pour comprendre votre activité, trouver votre logo et vos couleurs, puis proposer des idées de publications.",
   siteUrl: "Adresse de la page à lire", analyze: "Analyser le site", analyzing: "Analyse en cours…",
@@ -61,6 +66,11 @@ const fr = {
 export type Messages = typeof fr;
 
 const en: Messages = {
+  peakTitle: "Best times to post", peakAnalyze: "Analyze my page", peakRefresh: "Update", peakBusy: "Analyzing the page…",
+  peakIntro: "DOLPHin looks at when your past posts got the most reactions, comments and shares, then publishes at peak times.",
+  peakFromPage: "Based on {n} posts from your page.", peakDefault: "General recommendation: not enough posts to analyze on your page yet.",
+  peakBest: "Peak times", peakLess: "less", peakMore: "more engagement", peakReady: "Peak times computed.",
+  autoTime: "Post at peak times (automatic)", days: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"], hourShort: "{h}:00",
   analyzed: "Website analyzed: {n} idea(s) suggested.",
   site: "Your website", siteIntro: "DOLPHin reads your website to understand your business, find your logo and colors, then suggest post ideas.",
   siteUrl: "Page to read", analyze: "Analyze the website", analyzing: "Analyzing…",
@@ -109,6 +119,11 @@ const en: Messages = {
 };
 
 const ar: Messages = {
+  peakTitle: "أفضل أوقات النشر", peakAnalyze: "تحليل صفحتي", peakRefresh: "تحديث", peakBusy: "جارٍ تحليل الصفحة…",
+  peakIntro: "يدرس DOLPHin متى حصلت منشوراتك السابقة على أكبر عدد من التفاعلات والتعليقات والمشاركات، ثم ينشر في أوقات الذروة.",
+  peakFromPage: "محسوب من {n} منشورًا من صفحتك.", peakDefault: "توصية عامة: لا توجد منشورات كافية في صفحتك للتحليل بعد.",
+  peakBest: "أوقات الذروة", peakLess: "أقل", peakMore: "تفاعل أكثر", peakReady: "تم حساب أوقات الذروة.",
+  autoTime: "النشر في أوقات الذروة (تلقائي)", days: ["الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت", "الأحد"], hourShort: "الساعة {h}",
   analyzed: "تم تحليل الموقع: {n} فكرة مقترحة.",
   site: "موقعك", siteIntro: "يقرأ DOLPHin موقعك ليفهم نشاطك ويجد شعارك وألوانك، ثم يقترح أفكارًا للمنشورات.",
   siteUrl: "عنوان الصفحة المراد قراءتها", analyze: "تحليل الموقع", analyzing: "جارٍ التحليل…",

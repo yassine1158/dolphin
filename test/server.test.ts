@@ -53,6 +53,10 @@ describe("server", () => {
     const bad = await post("/v1/analyze", { snapshot: { url: "x", text: "y".repeat(9000) } });
     expect(bad.status).toBe(400);
   });
+  it("serves the page history", async () => {
+    publisher.historyRows = [{ createdTime: "2026-06-02T20:00:00Z", reactions: 1, comments: 0, shares: 0 }];
+    expect(await new HttpPublisher({ endpoint: url, token: "secret-token" }).history()).toEqual(publisher.historyRows);
+  });
   it("rejects non-PNG images", async () => {
     const r = await post("/v1/publish", { imageBase64: Buffer.from("GIF89a").toString("base64"), caption: "x" });
     expect((await r.json()).error.message).toMatch(/PNG/);

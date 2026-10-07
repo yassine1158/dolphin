@@ -33,6 +33,9 @@ button.danger{background:transparent;color:var(--d-danger);border-color:color-mi
 button.danger[data-armed]{background:var(--d-danger);color:#fff}
 button.link{background:none;border:0;padding:4px 0;color:var(--d-muted);text-decoration:underline}
 button[disabled]{opacity:.55;cursor:progress}
+.check{display:flex;align-items:center;gap:10px;font-weight:600;cursor:pointer}
+.check input{width:18px;height:18px;accent-color:var(--d-primary)}
+.check>span{margin:0;font-size:.92rem}
 .state{font-weight:600;font-size:.9rem;margin:0 0 10px}
 .state.ok{color:var(--d-ok)}.state.missing{color:#a15c07}
 .hint{color:var(--d-muted);font-size:.85rem;margin:2px 0 12px}

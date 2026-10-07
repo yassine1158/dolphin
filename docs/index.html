@@ -20,7 +20,7 @@
   <div class="wrap nav-in">
     <a class="brand" href="#top" aria-label="DOLPHin, accueil"><img src="dolphin-mark.svg" alt="" width="36" height="36"><span>DOLPH<b>in</b></span></a>
     <nav aria-label="Sections">
-      <a href="#comment">Comment ça marche</a><a href="#demo">Démo</a><a href="#integration">Intégration</a><a href="#licence">Licence</a>
+      <a href="#comment">Comment ça marche</a><a href="#auto">Automatique</a><a href="#demo">Démo</a><a href="#integration">Intégration</a><a href="#licence">Licence</a>
       <a class="gh" href="https://github.com/yassine1158/dolphin">GitHub</a>
     </nav>
   </div>
@@ -30,16 +30,16 @@
   <section class="hero" id="top">
     <div class="wrap hero-in">
       <div class="hero-text">
-        <p class="pill"><span class="dot"></span> Bêta en test · open source AGPL-3.0</p>
-        <h1>Vos publications, <em>écrites, dessinées et programmées</em> par l'IA.</h1>
-        <p class="lead">DOLPHin lit votre site, comprend votre activité, propose des idées, écrit vos publications Facebook et Instagram, dessine l'affiche à vos couleurs et la programme sur votre page. Vous validez d'un clic.</p>
+        <p class="pill"><span class="dot"></span> Publication automatique · bêta · open source</p>
+        <h1>Vos publications Facebook, <em>publiées automatiquement</em> au meilleur moment.</h1>
+        <p class="lead">DOLPHin lit votre site, écrit vos publications, dessine l'affiche à vos couleurs, puis <strong>les publie tout seul sur votre page, aux heures où votre public réagit le plus</strong>. Vous validez une fois : il s'occupe du reste, tous les jours.</p>
         <div class="cta">
           <a class="btn primary" href="#demo">Essayer la démo</a>
           <a class="btn ghost" href="https://github.com/yassine1158/dolphin">Voir le code</a>
         </div>
         <ul class="facts">
-          <li><strong>1 ligne</strong> pour l'intégrer</li>
-          <li><strong>3 langues</strong> fr · en · ar</li>
+          <li><strong>100 % automatique</strong> après validation</li>
+          <li><strong>Heures de pointe</strong> calculées pour votre page</li>
           <li><strong>≈ 25 FCFA</strong> par publication</li>
         </ul>
       </div>
@@ -57,8 +57,29 @@
       <ol class="steps">
         <li><span class="n">1</span><h3>Il lit votre site</h3><p>Activité, clientèle, ville, produits disponibles ou à venir, contact. Il récupère aussi votre logo et en déduit vos couleurs.</p></li>
         <li><span class="n">2</span><h3>Il propose des idées</h3><p>6 à 8 sujets adaptés à votre activité : vendre, conseiller, rassurer, annoncer. Chacun avec son angle et la raison de le publier.</p></li>
-        <li><span class="n">3</span><h3>Il écrit, dessine et programme</h3><p>Le texte, les hashtags et une affiche 1080 × 1350 à vos couleurs. Ensuite, publication immédiate ou programmée sur votre page Facebook.</p></li>
+        <li><span class="n">3</span><h3>Il écrit et dessine</h3><p>Le texte, les hashtags et une affiche 1080 × 1350 à vos couleurs. Vous relisez, vous corrigez si besoin.</p></li>
+        <li><span class="n">4</span><h3>Il publie tout seul</h3><p>Un clic sur « Programmer tout » : chaque publication part automatiquement sur votre page, à l'heure de pointe du jour. Même ordinateur éteint.</p></li>
       </ol>
+    </div>
+  </section>
+
+  <section class="wrap auto" id="auto" aria-labelledby="auto-title">
+    <div class="auto-in">
+      <div>
+        <h2 id="auto-title">Publié automatiquement, au bon moment</h2>
+        <p class="auto-lead">Publier au hasard, c'est parler quand personne n'écoute. DOLPHin regarde quand vos publications passées ont reçu le plus de réactions, de commentaires et de partages, puis il programme chaque nouvelle publication à <strong>l'heure de pointe de son jour</strong>.</p>
+        <ul class="auto-list">
+          <li><strong>Vous validez une fois.</strong> Un clic programme toute la série : une publication par jour.</li>
+          <li><strong>Facebook publie tout seul.</strong> La publication est envoyée par Facebook à l'heure prévue, même si votre ordinateur est éteint.</li>
+          <li><strong>Une page sans historique ?</strong> DOLPHin part des habitudes générales (midi et soirée en semaine, fin de matinée le week-end), puis s'affine avec vos résultats.</li>
+        </ul>
+      </div>
+      <figure class="peak-demo" aria-labelledby="peak-cap">
+        <figcaption id="peak-cap"><strong>Exemple : heures de pointe de la page « Le Fournil »</strong><span>calculées par DOLPHin sur 60 publications</span></figcaption>
+        <div id="peak-best" class="peak-best"></div>
+        <div id="peak-map" class="peak-map" role="group" aria-label="Engagement par jour et par tranche horaire"></div>
+        <div class="peak-legend" aria-hidden="true"><span>moins</span><i></i><i></i><i></i><i></i><i></i><span>plus d'engagement</span></div>
+      </figure>
     </div>
   </section>
 
@@ -66,7 +87,7 @@
     <h2 id="f-title">Pensé pour les vraies entreprises</h2>
     <div class="grid">
       <article><h3>Fidèle à votre marque</h3><p>Il ne vend que ce qui est disponible, ne donne jamais de prix si vous ne le voulez pas, n'invente aucun chiffre et respecte vos sujets interdits.</p></article>
-      <article><h3>Vous gardez la main</h3><p>Rien n'est publié sans votre clic. Chaque texte et chaque affiche se modifient avant l'envoi.</p></article>
+      <article><h3>Automatique, sous votre contrôle</h3><p>Après votre validation, tout part seul, à l'heure de pointe. Avant, chaque texte et chaque affiche se modifient librement.</p></article>
       <article><h3>Sur n'importe quel site</h3><p>Un composant web standard : HTML, WordPress, PHP, Django, React… Le serveur expose 5 routes documentées (OpenAPI), réimplémentables dans tout langage.</p></article>
       <article><h3>Vos clés en sécurité</h3><p>En mode serveur, les clés ne quittent jamais votre serveur. En mode navigateur, elles sont chiffrées sur l'appareil (AES-GCM 256).</p></article>
       <article><h3>Français, anglais, arabe</h3><p>L'interface et les publications s'adaptent à la langue de la marque, y compris l'arabe de droite à gauche.</p></article>
@@ -78,7 +99,7 @@
     <div class="wrap">
       <h2>Démo en direct</h2>
       <p class="lead">Voici le vrai composant DOLPHin, branché sur le site d'une boulangerie fictive, <a href="demo/site.html" target="_blank" rel="noopener">« Le Fournil »</a>. Les réponses de l'IA et la page Facebook sont simulées : la démo est gratuite, et rien ne quitte votre navigateur.</p>
-      <ol class="hint-steps"><li>« Analyser le site »</li><li>Vérifier puis « Enregistrer le profil »</li><li>« Écrire ce post » ou « Générer les publications »</li></ol>
+      <ol class="hint-steps"><li>« Analyser le site »</li><li>« Enregistrer le profil »</li><li>« Analyser ma page » (heures de pointe)</li><li>« Générer », puis « Programmer tout »</li></ol>
       <button class="btn primary" id="demo-start">Lancer la démo</button>
       <div id="demo-studio" class="demo-host"></div>
     </div>

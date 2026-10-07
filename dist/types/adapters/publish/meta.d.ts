@@ -1,4 +1,5 @@
 import { DolphinError } from "../../core/errors.js";
+import type { EngagementSample } from "../../core/peak.js";
 import type { PublishInput, PublisherPort } from "../../ports/index.js";
 export interface MetaPageOptions {
     pageId: string;
@@ -22,6 +23,8 @@ export declare class MetaPagePublisher implements PublisherPort {
     verify(): Promise<{
         name: string;
     }>;
+    /** Last 100 published posts with their reactions, comments and shares (needs pages_read_engagement). */
+    history(): Promise<EngagementSample[]>;
     private request;
 }
 export declare function graphError(e: GraphError, status?: number): DolphinError;

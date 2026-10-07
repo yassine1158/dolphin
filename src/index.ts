@@ -16,6 +16,7 @@ export { ANALYSIS_JSON_SCHEMA, buildAnalyzePrompt, parseAnalysis } from "./core/
 export { POSTS_JSON_SCHEMA, parseDrafts, fullCaption, MAX_POSTS } from "./core/schema.js";
 export { buildSystemPrompt, buildUserPrompt } from "./core/prompt.js";
 export { planSchedule, assertSchedulable } from "./core/schedule.js";
+export { analyzePeaks, planWithPeaks, type PeakReport, type EngagementSample } from "./core/peak.js";
 export { MODEL_PRICING, DEFAULT_MODEL, estimateCostUsd, estimatePerPostUsd } from "./core/cost.js";
 export type * from "./ports/index.js";
 export { ClaudeLlm, type ClaudeLlmOptions } from "./adapters/llm/claude.js";
