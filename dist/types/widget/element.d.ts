@@ -30,6 +30,8 @@ export interface DolphinConfig {
      */
     secrets?: StudioSecrets;
     onSecretsChange?: (secrets: StudioSecrets) => void | Promise<void>;
+    /** Show the "Connections" card (keys, Facebook page). Default: true. */
+    showConnections?: boolean;
 }
 export type DirectFactory = (secrets: StudioSecrets, config: DolphinConfig) => Pick<StudioDeps, "llm" | "publisher">;
 export declare class DolphinStudioElement extends HTMLElement {

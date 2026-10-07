@@ -6,6 +6,8 @@ DOLPHin écrit les publications d'une entreprise, dessine l'affiche à ses coule
 
 > Statut : **bêta, en phase de test** (v0.3.0).
 
+**Page de présentation et démo en direct (sans clé) :** https://yassine1158.github.io/dolphin/
+
 ## Essayer en 2 minutes (sur votre ordinateur)
 
 1. Installez **Node.js 22** ou plus récent : https://nodejs.org
@@ -146,6 +148,10 @@ npm run demo        # démo locale avec vos vraies clés (.env)
 ```
 
 Variables du serveur : voir l'en-tête de [`src/server/cli.ts`](src/server/cli.ts).
+
+## Page de présentation
+
+Le dossier [`docs/`](docs) contient la page publique (GitHub Pages). On y trouve une démo du vrai composant, où l'IA et Facebook sont simulés. `npm run build` y recopie `dolphin.lite.js`. Pour la publier : **Settings → Pages → Deploy from a branch → `main` / `docs`**.
 
 ## Licence
 
