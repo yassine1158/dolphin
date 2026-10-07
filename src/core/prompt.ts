@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 import type { BrandProfile, GenerateRequest, Lang } from "./types.js";
 
 const LANGUAGE: Record<Lang, string> = { fr: "French", en: "English", ar: "Modern Standard Arabic" };

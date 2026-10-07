@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 /**
  * DOLPHin HTTP server (Node ≥ 20, no framework). Keeps the Claude key and the Meta token
  * on the server; browsers use the widget in proxy mode. Contract: openapi.yaml.

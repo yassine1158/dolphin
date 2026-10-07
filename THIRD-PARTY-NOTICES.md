@@ -1,6 +1,6 @@
 # Logiciels tiers inclus dans DOLPHin
 
-Les fichiers `dist/dolphin.js` et `dist/dolphin.esm.js` (avec dépendances), ainsi que le serveur, contiennent ou utilisent les logiciels libres suivants. Leurs licences s'appliquent à ces parties uniquement ; le reste de DOLPHin est régi par le fichier [LICENSE](LICENSE).
+Les fichiers `dist/dolphin.js` et `dist/dolphin.esm.js` (avec dépendances), ainsi que le serveur, contiennent ou utilisent les logiciels libres suivants. Leurs licences s'appliquent à ces parties uniquement ; le reste de DOLPHin est publié sous AGPL-3.0 ([LICENSE](LICENSE)) ou sous licence commerciale ([COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)).
 
 ## @anthropic-ai/sdk 0.131.0 — MIT
 

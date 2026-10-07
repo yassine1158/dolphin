@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 /**
  * Reads a web page (DOM) into a SiteSnapshot. Works on the live document or on HTML
  * fetched and parsed with DOMParser. No network access except `discoverSite`.

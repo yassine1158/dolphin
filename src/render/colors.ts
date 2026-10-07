@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 /**
  * Brand colors from a logo: a dark color for backgrounds and a vivid accent.
  * `pickBrandColors` is pure (pixel array in, colors out); `colorsFromImage` samples an image in the browser.
