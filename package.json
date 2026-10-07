@@ -6,6 +6,14 @@
   "private": true,
   "license": "AGPL-3.0-only",
   "author": "Yassine Chaabane",
+  "homepage": "https://yassine1158.github.io/dolphin/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yassine1158/dolphin.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yassine1158/dolphin/issues"
+  },
   "engines": {
     "node": ">=22.9"
   },
