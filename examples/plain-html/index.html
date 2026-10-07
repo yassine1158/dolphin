@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DOLPHin · intégration HTML</title>
+  <style>body{margin:0;padding:24px;background:#eef2f0;font-family:system-ui,sans-serif} main{max-width:1100px;margin:auto}</style>
+</head>
+<body>
+<main>
+  <!-- 1. Le script (une seule ligne, n'importe quel site) -->
+  <script src="../../dist/dolphin.lite.js" defer></script>
+
+  <!-- 2. Le composant, configuré en JSON. Mode proxy : les clés restent sur le serveur DOLPHin. -->
+  <dolphin-studio>
+    <script type="application/json">
+    {
+      "endpoint": "http://localhost:8787",
+      "token": "change-me",
+      "brand": {
+        "id": "acme", "name": "ACME", "fullName": "ACME Nutrition Animale", "language": "fr",
+        "location": "Abidjan, Côte d'Ivoire", "audience": "éleveurs de volailles",
+        "contact": { "whatsapp": "+225 07 00 00 00 00", "callToAction": "Commande sur WhatsApp" },
+        "footerLines": ["Commande sur WhatsApp", "Retrait ou livraison"],
+        "products": [
+          { "name": "Œufs à couver", "status": "available", "details": "Œufs fécondés pour incubateur." },
+          { "name": "Aliments pour volailles", "status": "soon" }
+        ],
+        "colors": { "primary": "#0b3f2f", "accent": "#f3811d" },
+        "logoOnDarkUrl": "../dolphin-mark.svg"
+      }
+    }
+    </script>
+  </dolphin-studio>
+</main>
+</body>
+</html>

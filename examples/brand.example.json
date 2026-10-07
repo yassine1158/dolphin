@@ -1,0 +1,16 @@
+{
+  "id": "acme",
+  "name": "ACME",
+  "fullName": "ACME Nutrition Animale",
+  "location": "Abidjan, Côte d'Ivoire",
+  "audience": "éleveurs de volailles",
+  "language": "fr",
+  "contact": { "whatsapp": "+225 07 00 00 00 00", "callToAction": "Commande sur WhatsApp" },
+  "footerLines": ["Commande sur WhatsApp", "Retrait ou livraison"],
+  "products": [
+    { "name": "Œufs à couver", "status": "available", "details": "Œufs fécondés pour incubateur ou poule couveuse." },
+    { "name": "Aliments pour volailles", "status": "soon" }
+  ],
+  "colors": { "primary": "#0b3f2f", "accent": "#f3811d" },
+  "rules": { "hidePrices": true, "neverMention": ["les formules et ingrédients des aliments"] }
+}

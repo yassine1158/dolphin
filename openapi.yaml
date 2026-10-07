@@ -1,0 +1,178 @@
+openapi: 3.1.0
+info:
+  title: DOLPHin API
+  version: 0.1.0
+  description: |
+    Contract between the <dolphin-studio> widget (proxy mode) and a server that holds the keys.
+    The reference implementation is `dolphin-server` (Node). Any backend (PHP, Python, Java, Go, .NET…)
+    can implement these four routes to host DOLPHin.
+    Errors always have the shape `{ "error": { "code": ErrorCode, "message": string } }`.
+servers:
+  - url: http://localhost:8787
+security:
+  - bearer: []
+paths:
+  /v1/health:
+    get:
+      summary: Server status (no token required)
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, version, llm, publisher]
+                properties:
+                  ok: { type: boolean }
+                  version: { type: string }
+                  llm: { type: boolean, description: Generation is available }
+                  publisher: { type: boolean, description: Publishing is available }
+  /v1/generate:
+    post:
+      summary: Write posts for a brand
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [request]
+              properties:
+                brand: { $ref: "#/components/schemas/BrandProfile" }
+                request: { $ref: "#/components/schemas/GenerateRequest" }
+      responses:
+        "200":
+          description: Posts written by the model
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenerateResult" }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/publish:
+    post:
+      summary: Publish a poster now, or schedule it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [imageBase64, caption]
+              properties:
+                imageBase64: { type: string, description: PNG, base64, at most 8 MB }
+                caption: { type: string, maxLength: 5000 }
+                scheduledAt: { type: string, format: date-time, description: Absent means now. Between 10 minutes and 30 days ahead. }
+      responses:
+        "200":
+          description: Sent
+          content:
+            application/json:
+              schema: { type: object, required: [id], properties: { id: { type: string } } }
+        default: { $ref: "#/components/responses/Error" }
+  /v1/publisher:
+    get:
+      summary: Check the publishing account
+      responses:
+        "200":
+          description: Page name
+          content:
+            application/json:
+              schema: { type: object, required: [name], properties: { name: { type: string } } }
+        default: { $ref: "#/components/responses/Error" }
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer }
+  responses:
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [error]
+            properties:
+              error:
+                type: object
+                required: [code, message]
+                properties:
+                  code: { $ref: "#/components/schemas/ErrorCode" }
+                  message: { type: string }
+  schemas:
+    ErrorCode:
+      type: string
+      enum: [auth, permission, quota, rate_limit, overloaded, network, invalid_request, invalid_output, refusal, too_long, schedule_window, not_configured, unknown]
+    Product:
+      type: object
+      required: [name, status]
+      properties:
+        name: { type: string, maxLength: 100 }
+        status: { type: string, enum: [available, soon] }
+        details: { type: string, maxLength: 600 }
+    BrandProfile:
+      type: object
+      required: [id, name, language, products, colors]
+      properties:
+        id: { type: string, maxLength: 64 }
+        name: { type: string, maxLength: 80 }
+        fullName: { type: string }
+        location: { type: string }
+        audience: { type: string }
+        language: { type: string, enum: [fr, en, ar] }
+        contact:
+          type: object
+          properties:
+            whatsapp: { type: string }
+            phone: { type: string }
+            website: { type: string }
+            callToAction: { type: string }
+        products: { type: array, maxItems: 50, items: { $ref: "#/components/schemas/Product" } }
+        colors:
+          type: object
+          required: [primary, accent]
+          properties:
+            primary: { type: string, pattern: "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$" }
+            accent: { type: string, pattern: "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$" }
+            light: { type: string, pattern: "^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$" }
+        logoUrl: { type: string }
+        logoOnDarkUrl: { type: string }
+        footerLines: { type: array, maxItems: 2, items: { type: string } }
+        rules:
+          type: object
+          properties:
+            hidePrices: { type: boolean, default: true }
+            neverMention: { type: array, items: { type: string } }
+            extra: { type: array, items: { type: string } }
+    GenerateRequest:
+      type: object
+      required: [count]
+      properties:
+        count: { type: integer, minimum: 1, maximum: 10 }
+        subject: { type: string }
+        tone: { type: string }
+        notes: { type: string }
+        avoidTitles: { type: array, items: { type: string } }
+    PostDraft:
+      type: object
+      required: [tag, title, subtitle, points, style, theme, caption, hashtags]
+      properties:
+        tag: { type: string }
+        title: { type: string }
+        subtitle: { type: string }
+        points: { type: array, items: { type: string } }
+        style: { type: string, enum: [checks, steps] }
+        theme: { type: string, enum: [dark, light, accent] }
+        caption: { type: string }
+        hashtags: { type: array, items: { type: string } }
+    GenerateResult:
+      type: object
+      required: [drafts, usage, model]
+      properties:
+        drafts: { type: array, items: { $ref: "#/components/schemas/PostDraft" } }
+        usage:
+          type: object
+          required: [inputTokens, outputTokens]
+          properties:
+            inputTokens: { type: integer }
+            outputTokens: { type: integer }
+        model: { type: string }

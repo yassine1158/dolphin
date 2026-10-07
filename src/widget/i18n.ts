@@ -1,0 +1,112 @@
+import type { DolphinErrorCode } from "../core/errors.js";
+import type { Lang } from "../core/types.js";
+
+const fr = {
+  tagline: "Studio IA · publications et affiches automatiques",
+  beta: "bêta",
+  lockTitle: "Déverrouiller le studio", lockIntro: "Vos clés sont chiffrées sur cet appareil.",
+  setupTitle: "Protéger vos clés", setupIntro: "Choisissez une phrase secrète (8 caractères minimum) : elle chiffre vos clés sur cet appareil.",
+  passphrase: "Phrase secrète", confirm: "Confirmer", unlock: "Déverrouiller", create: "Créer", lock: "Verrouiller",
+  forgot: "Effacer les clés de cet appareil", forgotConfirm: "Confirmer l'effacement",
+  mismatch: "Les deux phrases ne sont pas identiques.",
+  connections: "Connexions", claudeKey: "Clé API Claude", claudeHelp: "console.anthropic.com → API Keys. Ajoutez un crédit et une limite de dépense.",
+  pageId: "ID de la page Facebook", pageToken: "Jeton de la page (pages_manage_posts)",
+  keyOk: "Clé Claude enregistrée.", keyMissing: "Aucune clé Claude : la génération est désactivée.",
+  fbOk: "Page Facebook connectée.", fbMissing: "Page Facebook non connectée : téléchargement et copie seulement.",
+  save: "Enregistrer", test: "Tester", saved: "Connexions enregistrées.",
+  proxyOk: "Connecté au serveur DOLPHin.",
+  create_: "Créer avec l'IA", subject: "Sujet", tone: "Ton", count: "Nombre de publications", startDate: "Première publication le", time: "Heure (une par jour)",
+  notes: "Idée ou consigne (optionnel)", notesPh: "Ex. : nouvelle fournée cette semaine",
+  generate: "Générer les publications", generating: "Génération en cours…",
+  costHint: "Coût estimé : environ {cost} $ par publication.",
+  posts: "Publications", empty: "Aucune publication pour l'instant.",
+  scheduleAll: "Programmer tout", clearAll: "Tout effacer", confirmQ: "Confirmer ?",
+  tag: "Étiquette", theme: "Couleurs", title: "Titre", subtitle: "Sous-titre", points: "Points (un par ligne)", style: "Présentation",
+  caption: "Texte de la publication", hashtags: "Hashtags", when: "Date et heure",
+  themes: { dark: "Foncé", light: "Clair", accent: "Accent" }, styles: { checks: "Coches", steps: "Étapes" },
+  download: "Télécharger", copy: "Copier le texte", schedule: "Programmer", publishNow: "Publier maintenant", remove: "Supprimer",
+  status: { draft: "Brouillon", scheduled: "Programmée", published: "Publiée", failed: "Échec" },
+  copied: "Texte copié.", generated: "{n} publication(s) prête(s). Coût : environ {cost} $.",
+  sent: "{n} publication(s) envoyée(s).", partly: "{ok} envoyée(s), {ko} en échec.",
+  subjects: { mix: "Un peu de tout", sell: "Vendre les produits disponibles", tips: "Conseils utiles", trust: "Confiance et coulisses", soon: "Annoncer les nouveautés" },
+  tones: { warm: "Chaleureux", pro: "Professionnel", bold: "Énergique" },
+  contact: "Contact",
+  errors: {
+    auth: "Clé ou jeton invalide.", permission: "Permission manquante.", quota: "Crédit épuisé : rechargez votre compte.",
+    rate_limit: "Trop de demandes : réessayez dans une minute.", overloaded: "Service surchargé : réessayez plus tard.",
+    network: "Connexion impossible.", invalid_request: "Demande invalide.", invalid_output: "Réponse inattendue de l'IA : réessayez.",
+    refusal: "L'IA a refusé : reformulez la consigne.", too_long: "Réponse trop longue : demandez moins de publications.",
+    schedule_window: "Choisissez une date entre 10 minutes et 30 jours.", not_configured: "Service non configuré.", unknown: "Erreur inattendue.",
+  } satisfies Record<DolphinErrorCode, string>,
+};
+
+export type Messages = typeof fr;
+
+const en: Messages = {
+  tagline: "AI studio · automatic posts and posters", beta: "beta",
+  lockTitle: "Unlock the studio", lockIntro: "Your keys are encrypted on this device.",
+  setupTitle: "Protect your keys", setupIntro: "Choose a passphrase (8 characters minimum): it encrypts your keys on this device.",
+  passphrase: "Passphrase", confirm: "Confirm", unlock: "Unlock", create: "Create", lock: "Lock",
+  forgot: "Erase keys from this device", forgotConfirm: "Confirm erase", mismatch: "The passphrases do not match.",
+  connections: "Connections", claudeKey: "Claude API key", claudeHelp: "console.anthropic.com → API Keys. Add credit and a spend limit.",
+  pageId: "Facebook page ID", pageToken: "Page token (pages_manage_posts)",
+  keyOk: "Claude key saved.", keyMissing: "No Claude key: generation is disabled.",
+  fbOk: "Facebook page connected.", fbMissing: "Facebook page not connected: download and copy only.",
+  save: "Save", test: "Test", saved: "Connections saved.", proxyOk: "Connected to the DOLPHin server.",
+  create_: "Create with AI", subject: "Subject", tone: "Tone", count: "Number of posts", startDate: "First post on", time: "Time (one per day)",
+  notes: "Idea or instruction (optional)", notesPh: "E.g.: new batch this week",
+  generate: "Generate posts", generating: "Generating…", costHint: "Estimated cost: about ${cost} per post.",
+  posts: "Posts", empty: "No posts yet.", scheduleAll: "Schedule all", clearAll: "Clear all", confirmQ: "Confirm?",
+  tag: "Label", theme: "Colors", title: "Title", subtitle: "Subtitle", points: "Points (one per line)", style: "Layout",
+  caption: "Post text", hashtags: "Hashtags", when: "Date and time",
+  themes: { dark: "Dark", light: "Light", accent: "Accent" }, styles: { checks: "Checks", steps: "Steps" },
+  download: "Download", copy: "Copy text", schedule: "Schedule", publishNow: "Publish now", remove: "Delete",
+  status: { draft: "Draft", scheduled: "Scheduled", published: "Published", failed: "Failed" },
+  copied: "Text copied.", generated: "{n} post(s) ready. Cost: about ${cost}.", sent: "{n} post(s) sent.", partly: "{ok} sent, {ko} failed.",
+  subjects: { mix: "A bit of everything", sell: "Sell available products", tips: "Useful tips", trust: "Trust and behind the scenes", soon: "Announce what's coming" },
+  tones: { warm: "Warm", pro: "Professional", bold: "Bold" }, contact: "Contact",
+  errors: {
+    auth: "Invalid key or token.", permission: "Missing permission.", quota: "Credit exhausted: top up your account.",
+    rate_limit: "Too many requests: retry in a minute.", overloaded: "Service overloaded: retry later.", network: "Cannot connect.",
+    invalid_request: "Invalid request.", invalid_output: "Unexpected AI answer: retry.", refusal: "The AI declined: rephrase the instruction.",
+    too_long: "Answer too long: ask for fewer posts.", schedule_window: "Pick a date between 10 minutes and 30 days.",
+    not_configured: "Service not configured.", unknown: "Unexpected error.",
+  },
+};
+
+const ar: Messages = {
+  tagline: "استوديو ذكاء اصطناعي · منشورات وملصقات تلقائية", beta: "تجريبي",
+  lockTitle: "فتح الاستوديو", lockIntro: "مفاتيحك مشفّرة على هذا الجهاز.",
+  setupTitle: "احمِ مفاتيحك", setupIntro: "اختر عبارة سرية (8 أحرف على الأقل): تُستخدم لتشفير مفاتيحك على هذا الجهاز.",
+  passphrase: "العبارة السرية", confirm: "تأكيد", unlock: "فتح", create: "إنشاء", lock: "قفل",
+  forgot: "مسح المفاتيح من هذا الجهاز", forgotConfirm: "تأكيد المسح", mismatch: "العبارتان غير متطابقتين.",
+  connections: "الاتصالات", claudeKey: "مفتاح Claude API", claudeHelp: "console.anthropic.com ← API Keys. أضف رصيدًا وحدًا للإنفاق.",
+  pageId: "معرّف صفحة فيسبوك", pageToken: "رمز الصفحة (pages_manage_posts)",
+  keyOk: "تم حفظ مفتاح Claude.", keyMissing: "لا يوجد مفتاح Claude: التوليد معطّل.",
+  fbOk: "صفحة فيسبوك متصلة.", fbMissing: "صفحة فيسبوك غير متصلة: التنزيل والنسخ فقط.",
+  save: "حفظ", test: "اختبار", saved: "تم حفظ الاتصالات.", proxyOk: "متصل بخادم DOLPHin.",
+  create_: "إنشاء بالذكاء الاصطناعي", subject: "الموضوع", tone: "الأسلوب", count: "عدد المنشورات", startDate: "أول منشور يوم", time: "الساعة (منشور يوميًا)",
+  notes: "فكرة أو تعليمات (اختياري)", notesPh: "مثال: دفعة جديدة هذا الأسبوع",
+  generate: "توليد المنشورات", generating: "جارٍ التوليد…", costHint: "التكلفة التقديرية: حوالي {cost} $ للمنشور.",
+  posts: "المنشورات", empty: "لا توجد منشورات بعد.", scheduleAll: "جدولة الكل", clearAll: "مسح الكل", confirmQ: "تأكيد؟",
+  tag: "الوسم", theme: "الألوان", title: "العنوان", subtitle: "العنوان الفرعي", points: "النقاط (سطر لكل نقطة)", style: "العرض",
+  caption: "نص المنشور", hashtags: "الوسوم", when: "التاريخ والساعة",
+  themes: { dark: "داكن", light: "فاتح", accent: "مميّز" }, styles: { checks: "علامات", steps: "خطوات" },
+  download: "تنزيل", copy: "نسخ النص", schedule: "جدولة", publishNow: "نشر الآن", remove: "حذف",
+  status: { draft: "مسودة", scheduled: "مجدول", published: "منشور", failed: "فشل" },
+  copied: "تم نسخ النص.", generated: "{n} منشور جاهز. التكلفة: حوالي {cost} $.", sent: "تم إرسال {n} منشور.", partly: "أُرسل {ok}، وفشل {ko}.",
+  subjects: { mix: "قليل من كل شيء", sell: "بيع المنتجات المتوفرة", tips: "نصائح مفيدة", trust: "الثقة وما وراء الكواليس", soon: "الإعلان عن الجديد" },
+  tones: { warm: "ودود", pro: "احترافي", bold: "حماسي" }, contact: "تواصل",
+  errors: {
+    auth: "مفتاح أو رمز غير صالح.", permission: "صلاحية ناقصة.", quota: "نفد الرصيد: اشحن حسابك.",
+    rate_limit: "طلبات كثيرة: أعد المحاولة بعد دقيقة.", overloaded: "الخدمة مزدحمة: أعد المحاولة لاحقًا.", network: "تعذّر الاتصال.",
+    invalid_request: "طلب غير صالح.", invalid_output: "إجابة غير متوقعة: أعد المحاولة.", refusal: "رفض الذكاء الاصطناعي الطلب: أعد الصياغة.",
+    too_long: "الإجابة طويلة جدًا: اطلب عددًا أقل.", schedule_window: "اختر تاريخًا بين 10 دقائق و30 يومًا.",
+    not_configured: "الخدمة غير مهيّأة.", unknown: "خطأ غير متوقع.",
+  },
+};
+
+export const MESSAGES: Record<Lang, Messages> = { fr, en, ar };
+
+export const fill = (s: string, vars: Record<string, string | number>): string =>
+  s.replace(/\{(\w+)\}/g, (_, k: string) => String(vars[k] ?? ""));
