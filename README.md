@@ -6,7 +6,7 @@ DOLPHin écrit les publications d'une entreprise, dessine l'affiche à ses coule
 
 > Statut : **bêta, en phase de test** (v0.3.0).
 
-**Page de présentation et démo en direct (sans clé) :** https://yassine1158.github.io/dolphin/
+**Page de présentation :** https://yassine1158.github.io/dolphin/
 
 ## Essayer en 2 minutes (sur votre ordinateur)
 
@@ -155,7 +155,7 @@ Variables du serveur : voir l'en-tête de [`src/server/cli.ts`](src/server/cli.t
 
 ## Page de présentation
 
-Le dossier [`docs/`](docs) contient la page publique (GitHub Pages). On y trouve une démo du vrai composant, où l'IA et Facebook sont simulés. `npm run build` y recopie `dolphin.lite.js`. Pour la publier : **Settings → Pages → Deploy from a branch → `main` / `docs`**.
+Le dossier [`docs/`](docs) contient la page publique (GitHub Pages) : idées clés, fonctionnement détaillé, heures de pointe, intégration et questions fréquentes. Les affiches d'exemple et la carte des heures de pointe sont produites par le vrai moteur de DOLPHin. `npm run build` y recopie `dolphin.lite.js`. Pour la publier : **Settings → Pages → Deploy from a branch → `main` / `docs`**.
 
 ## Licence
 
