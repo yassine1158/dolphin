@@ -9,7 +9,8 @@
  */
 export * from "./core/types.js";
 export * from "./core/errors.js";
-export { validateBrand, validateGenerateRequest } from "./core/brand.js";
+export { validateBrand, validateGenerateRequest, validateSnapshot } from "./core/brand.js";
+export { ANALYSIS_JSON_SCHEMA, buildAnalyzePrompt, parseAnalysis } from "./core/analysis.js";
 export { POSTS_JSON_SCHEMA, parseDrafts, fullCaption, MAX_POSTS } from "./core/schema.js";
 export { buildSystemPrompt, buildUserPrompt } from "./core/prompt.js";
 export { planSchedule, assertSchedulable } from "./core/schedule.js";
@@ -20,8 +21,10 @@ export { HttpLlm, HttpPublisher, type HttpOptions } from "./adapters/http.js";
 export { MetaPagePublisher, type MetaPageOptions } from "./adapters/publish/meta.js";
 export { LocalStore, MemoryStore } from "./adapters/storage/index.js";
 export { Vault, type StudioSecrets } from "./adapters/secrets/vault.js";
+export { discoverSite, snapshotFromDocument } from "./adapters/site.js";
 export { drawPoster, CanvasPosterRenderer, POSTER_WIDTH, POSTER_HEIGHT, type PosterFonts } from "./render/poster.js";
 export { paletteFor, contrast } from "./render/theme.js";
+export { pickBrandColors, colorsFromImage, DEFAULT_COLORS } from "./render/colors.js";
 export { DolphinStudio, type StudioDeps, type GenerateOptions, type SendReport } from "./app/studio.js";
 export { DolphinStudioElement, defineDolphinElement, mount, type DolphinConfig } from "./widget/element.js";
 export { enableDirectMode } from "./direct.js";
