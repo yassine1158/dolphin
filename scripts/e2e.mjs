@@ -67,6 +67,11 @@ try {
     await p.waitForFunction(() => document.querySelector("dolphin-studio").shadowRoot.querySelectorAll("canvas").length === 3);
     await p.waitForTimeout(600);
     check(/3 publication/.test(await p.textContent("dolphin-studio .toast")), "proxy: 3 posts generated");
+    const hours = await p.$$eval("dolphin-studio input[type=datetime-local]", els => els.map(e => Number(e.value.slice(11, 13))));
+    check(hours.length === 3 && hours.every(h => h === 19 || h === 10), `proxy: auto peak times by default (${hours.join(", ")} h)`);
+    await p.click("dolphin-studio [data-act=peaks]");
+    await p.waitForSelector("dolphin-studio .hm-cell");
+    check((await p.$$("dolphin-studio .hm-cell")).length === 42 && /Recommandation générale/.test(await p.textContent("dolphin-studio .peaks ~ * , dolphin-studio .card .state.missing") ?? ""), "proxy: peak card (heat map, general recommendation without history)");
     await p.fill("dolphin-studio input[data-f$=':title']", "Titre modifié");
     await p.waitForTimeout(300);
     await p.screenshot({ path: join(OUT, "proxy.png"), fullPage: true });
@@ -100,7 +105,8 @@ try {
         + ev("message_delta", { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 3000 } })
         + ev("message_stop", { type: "message_stop" }) });
     });
-    await p.route("https://graph.facebook.com/**", route => { fbCalls++; return route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify({ id: "1", post_id: "p_1", name: "ACME" }) }); });
+    const fbHistory = [];
+    await p.route("https://graph.facebook.com/**", route => { if (route.request().url().includes("/published_posts")) fbHistory.push(route.request().url()); else fbCalls++; return route.fulfill({ status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: JSON.stringify({ id: "1", post_id: "p_1", name: "ACME" }) }); });
     await p.fill("dolphin-studio input[name=pass]", "phrase-secrete");
     await p.fill("dolphin-studio input[name=pass2]", "phrase-secrete");
     await p.click("dolphin-studio button[type=submit]");
@@ -118,6 +124,7 @@ try {
     await p.click("dolphin-studio [data-act=publish]");
     await p.waitForFunction(() => document.querySelector("dolphin-studio").shadowRoot.querySelector(".pill.published"));
     check(fbCalls === 1, "direct: published on Facebook");
+    check(fbHistory.length === 1 && fbHistory[0].includes("access_token=EAAtest"), "direct: page history read for peak times");
     // lock / unlock keeps keys
     await p.click("dolphin-studio [data-act=lock]");
     await p.fill("dolphin-studio input[name=pass]", "phrase-secrete");
@@ -168,8 +175,9 @@ try {
     check(primary === "#6b3e1f" && accent === "#f2b705", `auto: colors from the logo (${primary}, ${accent})`);
     await p.screenshot({ path: join(OUT, "auto-profile.png"), fullPage: true });
     // the owner uploads another logo
+    const before = await p.getAttribute("dolphin-studio .logo-preview img", "src"); // read before the upload: it can finish very fast
     await p.setInputFiles("dolphin-studio [data-upload]", join(ROOT, "examples/dolphin-mark.svg"));
-    await p.waitForFunction(old => document.querySelector("dolphin-studio").shadowRoot.querySelector(".logo-preview img")?.src !== old, await p.getAttribute("dolphin-studio .logo-preview img", "src"));
+    await p.waitForFunction(old => document.querySelector("dolphin-studio").shadowRoot.querySelector(".logo-preview img")?.src !== old, before);
     const uploaded = await p.getAttribute("dolphin-studio .logo-preview img", "src");
     check(uploaded?.startsWith("data:image/png"), "auto: uploaded logo replaces it");
     await p.selectOption("dolphin-studio [data-b='products.1.status']", "soon");

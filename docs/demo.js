@@ -5,7 +5,7 @@
 // pretend Facebook page instead of the paid APIs. Nothing leaves the visitor's browser.
 (function () {
   "use strict";
-  const { DolphinStudioElement, CanvasPosterRenderer, mount } = window.Dolphin;
+  const { DolphinStudioElement, CanvasPosterRenderer, mount, analyzePeaks } = window.Dolphin;
   const wait = ms => new Promise(r => setTimeout(r, ms));
 
   // ---------------------------------------------------------------- scripted model
@@ -56,7 +56,22 @@
       return { drafts, usage: { inputTokens: 3000, outputTokens: 1500 * request.count }, model: "démo" };
     },
   };
-  const demoPublisher = { async publish() { await wait(700); return { id: "demo-" + Date.now() }; }, async verify() { return { name: "Page démo" }; } };
+  // a pretend page history: the bakery's audience reacts most on weekday evenings and Saturday mornings
+  const history = () => {
+    const rows = [], now = new Date();
+    for (let i = 1; i <= 60; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth(), now.getDate() - i, [7, 12, 19, 20, 10][i % 5], 0);
+      const day = (d.getDay() + 6) % 7, h = d.getHours();
+      const peak = (day < 5 && (h === 19 || h === 20)) || (day === 5 && h === 10);
+      rows.push({ createdTime: d.toISOString(), reactions: peak ? 60 + (i % 7) * 5 : 8 + (i % 4), comments: peak ? 9 : 1, shares: peak ? 4 : 0 });
+    }
+    return rows;
+  };
+  const demoPublisher = {
+    async publish() { await wait(700); return { id: "demo-" + Date.now() }; },
+    async verify() { return { name: "Page démo" }; },
+    async history() { await wait(900); return history(); },
+  };
   DolphinStudioElement.directFactory = () => ({ llm: demoLlm, publisher: demoPublisher });
 
   // ---------------------------------------------------------------- live demo
@@ -82,4 +97,19 @@
     const d = DRAFTS[[0, 1, 2][i]];
     renderer.draw(canvas, { ...d, id: "h" + i, createdAt: "", scheduledAt: "", status: "draft" }, brand);
   });
+
+  // ---------------------------------------------------------------- peak times, computed by DOLPHin's own algorithm
+  const HEAT = ["#cde2fb", "#9ec5f4", "#5598e7", "#256abf", "#104281"];
+  const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
+  const BLOCKS = [6, 9, 12, 15, 18, 21];
+  const report = analyzePeaks(history());
+  const map = document.getElementById("peak-map");
+  const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  map.innerHTML = `<div class="r h"><span></span>${BLOCKS.map(h => `<span>${h} h</span>`).join("")}</div>` + DAYS.map((day, d) =>
+    `<div class="r"><span>${day.slice(0, 3)}</span>${BLOCKS.map(from => {
+      const v = Math.max(...report.grid[d].slice(from, from + 3));
+      const label = `${day}, ${from} h – ${from + 3} h : ${Math.round(v * 100)} % du meilleur créneau`;
+      return `<span class="c" style="background:${HEAT[Math.min(4, Math.floor(v * 5))]}" title="${esc(label)}" aria-label="${esc(label)}" role="img"></span>`;
+    }).join("")}</div>`).join("");
+  document.getElementById("peak-best").innerHTML = report.best.map((b, i) => `<span>${i + 1}. ${DAYS[b.day]} <b>${b.hour} h</b></span>`).join("");
 })();

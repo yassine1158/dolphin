@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 import { DolphinError } from "../../core/errors.js";
+import type { EngagementSample } from "../../core/peak.js";
 import { assertSchedulable } from "../../core/schedule.js";
 import type { PublishInput, PublisherPort } from "../../ports/index.js";
 
@@ -42,6 +43,20 @@ export class MetaPagePublisher implements PublisherPort {
     const url = `${this.base}?fields=name&access_token=${encodeURIComponent(this.opts.accessToken)}`;
     const data = await this.request<{ name?: string }>(url, { method: "GET" });
     return { name: data.name ?? "" };
+  }
+
+  /** Last 100 published posts with their reactions, comments and shares (needs pages_read_engagement). */
+  async history(): Promise<EngagementSample[]> {
+    const fields = "created_time,shares,reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0)";
+    const url = `${this.base}/published_posts?fields=${encodeURIComponent(fields)}&limit=100&access_token=${encodeURIComponent(this.opts.accessToken)}`;
+    type Row = { created_time?: string; shares?: { count?: number }; reactions?: { summary?: { total_count?: number } }; comments?: { summary?: { total_count?: number } } };
+    const data = await this.request<{ data?: Row[] }>(url, { method: "GET" });
+    return (data.data ?? []).filter(r => r.created_time).map(r => ({
+      createdTime: r.created_time!,
+      reactions: r.reactions?.summary?.total_count ?? 0,
+      comments: r.comments?.summary?.total_count ?? 0,
+      shares: r.shares?.count ?? 0,
+    }));
   }
 
   private async request<T>(url: string, init: RequestInit): Promise<T> {

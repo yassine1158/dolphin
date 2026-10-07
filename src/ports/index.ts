@@ -4,6 +4,7 @@
  * Ports: what the application needs from the outside world.
  * Adapters (Claude, Meta, HTTP proxy, storage…) implement them; the core never imports an adapter.
  */
+import type { EngagementSample } from "../core/peak.js";
 import type { AnalyzeResult, BrandProfile, GenerateRequest, GenerateResult, Post, SiteSnapshot } from "../core/types.js";
 
 export interface LlmPort {
@@ -23,6 +24,8 @@ export interface PublisherPort {
   publish(input: PublishInput): Promise<{ id: string }>;
   /** Checks the connection and returns the page name. */
   verify?(): Promise<{ name: string }>;
+  /** Engagement of the page's recent posts, used to find the peak times. */
+  history?(): Promise<EngagementSample[]>;
 }
 
 export interface PosterRenderer {

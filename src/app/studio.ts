@@ -3,6 +3,7 @@
 import { validateBrand } from "../core/brand.js";
 import { DolphinError, isDolphinError } from "../core/errors.js";
 import { MAX_POSTS, fullCaption } from "../core/schema.js";
+import { analyzePeaks, planWithPeaks, type PeakReport } from "../core/peak.js";
 import { assertSchedulable, planSchedule } from "../core/schedule.js";
 import type { AnalyzeResult, BrandProfile, GenerateRequest, Post, PostDraft, PostIdea, SiteSnapshot, Usage } from "../core/types.js";
 import type { KeyValueStore, LlmPort, PosterRenderer, PublisherPort } from "../ports/index.js";
@@ -22,7 +23,7 @@ export interface StudioDeps {
 export interface GenerateOptions extends GenerateRequest {
   /** First day of the plan (date part is used). Default: tomorrow. */
   startDate?: Date;
-  /** HH:MM, local time. Default 19:00. */
+  /** HH:MM, local time, or "auto": each post at the peak time of its weekday. Default 19:00. */
   time?: string;
   everyDays?: number;
 }
@@ -48,6 +49,7 @@ export class DolphinStudio {
   private readonly newId: () => string;
   private loaded = false;
   private ideaList: PostIdea[] = [];
+  private peakReport: PeakReport | null = null;
   private readonly ns: string;
 
   constructor(private deps: StudioDeps) {
@@ -82,6 +84,7 @@ export class DolphinStudio {
       const read = async <T>(k: string, d: T): Promise<T> => { try { return (JSON.parse((await this.deps.store.get(k)) ?? "null") as T) ?? d; } catch { return d; } };
       this.posts = await read<Post[]>(this.key, []);
       this.ideaList = await read<PostIdea[]>(`ideas:${this.ns}`, []);
+      this.peakReport = await read<PeakReport | null>(`peaks:${this.ns}`, null);
       if (this.brandLocked) this.hasSavedBrand = true;
       else {
         const saved = await read<unknown>(`brand:${this.ns}`, null);
@@ -101,6 +104,23 @@ export class DolphinStudio {
     await this.deps.store.set(`brand:${this.ns}`, JSON.stringify(valid));
     this.emit();
     return valid;
+  }
+
+  get peaks(): PeakReport | null { return this.peakReport; }
+
+  /**
+   * Peak times from the page's own posts when the publisher can read them,
+   * otherwise (or when it fails) the general recommendation.
+   */
+  async peakTimes(): Promise<PeakReport> {
+    let samples: Parameters<typeof analyzePeaks>[0] = [];
+    if (this.deps.publisher?.history) {
+      try { samples = await this.deps.publisher.history(); } catch { samples = []; }
+    }
+    this.peakReport = analyzePeaks(samples);
+    await this.deps.store.set(`peaks:${this.ns}`, JSON.stringify(this.peakReport));
+    this.emit();
+    return this.peakReport;
   }
 
   /** Reads the site through the model: a brand proposal (unless locked) and post ideas. */
@@ -124,7 +144,9 @@ export class DolphinStudio {
     const now = this.now();
     const start = opts.startDate ?? new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
     const drafts = result.drafts.slice(0, count); // never more than asked, whatever the model returns
-    const slots = planSchedule(drafts.length, start, opts.time, opts.everyDays);
+    const slots = opts.time === "auto"
+      ? planWithPeaks(drafts.length, start, this.peakReport ?? (await this.peakTimes()), opts.everyDays)
+      : planSchedule(drafts.length, start, opts.time, opts.everyDays);
     const created = drafts.map((d, i): Post => ({
       ...d, id: this.newId(), createdAt: now.toISOString(), scheduledAt: slots[i]!.toISOString(), status: "draft",
     }));
