@@ -1,5 +1,7 @@
 import type { BrandProfile, Post } from "../core/types.js";
 import type { PosterRenderer } from "../ports/index.js";
+/** Facebook refuses photos over 4 MB: keep a margin. */
+export declare const MAX_UPLOAD_BYTES = 3900000;
 export declare const POSTER_WIDTH = 1080;
 export declare const POSTER_HEIGHT = 1350;
 export interface PosterFonts {
@@ -35,6 +37,10 @@ export declare class CanvasPosterRenderer implements PosterRenderer {
     private loadImage;
     logoFor(post: Post, brand: BrandProfile): Promise<HTMLImageElement | null>;
     draw(canvas: HTMLCanvasElement, post: Post, brand: BrandProfile): Promise<void>;
+    /**
+     * The image that is published. PNG keeps text sharp; a poster with a photo, or a PNG over
+     * Facebook's 4 MB photo limit, goes out as JPEG.
+     */
     render(post: Post, brand: BrandProfile): Promise<Blob>;
     /** PNG (lossless, for Facebook) or JPEG (smaller, for messaging apps and print shops). */
     export(post: Post, brand: BrandProfile, type?: "image/png" | "image/jpeg"): Promise<Blob>;

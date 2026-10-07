@@ -13,6 +13,7 @@ export type DolphinErrorCode =
   | "too_long"
   | "schedule_window"
   | "not_configured"
+  | "storage_full"    // the browser has no room left for the studio's data
   | "unknown";
 
 export class DolphinError extends Error {
@@ -42,5 +43,6 @@ export const HTTP_STATUS: Record<DolphinErrorCode, number> = {
   too_long: 422,
   schedule_window: 400,
   not_configured: 501,
+  storage_full: 507,
   unknown: 500,
 };

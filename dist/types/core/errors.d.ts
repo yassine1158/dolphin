@@ -1,4 +1,4 @@
-export type DolphinErrorCode = "auth" | "permission" | "quota" | "rate_limit" | "overloaded" | "network" | "invalid_request" | "invalid_output" | "refusal" | "too_long" | "schedule_window" | "not_configured" | "unknown";
+export type DolphinErrorCode = "auth" | "permission" | "quota" | "rate_limit" | "overloaded" | "network" | "invalid_request" | "invalid_output" | "refusal" | "too_long" | "schedule_window" | "not_configured" | "storage_full" | "unknown";
 export declare class DolphinError extends Error {
     readonly code: DolphinErrorCode;
     readonly status?: number | undefined;

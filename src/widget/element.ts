@@ -3,7 +3,7 @@
 import { HttpLlm, HttpPublisher } from "../adapters/http.js";
 import { discoverSite, snapshotFromDocument } from "../adapters/site.js";
 import { Vault, type StudioSecrets } from "../adapters/secrets/vault.js";
-import { LocalStore } from "../adapters/storage/index.js";
+import { IdbStore } from "../adapters/storage/index.js";
 import { DolphinStudio, type StudioDeps } from "../app/studio.js";
 import { MAX_CSV_BYTES } from "../core/csv.js";
 import { safeLink, sizeOf } from "../core/design.js";
@@ -56,7 +56,9 @@ export interface DolphinConfig {
 export type DirectFactory = (secrets: StudioSecrets, config: DolphinConfig) => Pick<StudioDeps, "llm" | "publisher">;
 
 type View = "loading" | "setup" | "lock" | "main";
-interface Prefs { subject: string; tone: string; count: number; start: string; time: string; notes: string; auto: boolean; c: CampaignPrefs }
+type Tab = "create" | "posts" | "calendar" | "audience" | "settings";
+const TABS: readonly Tab[] = ["create", "posts", "calendar", "audience", "settings"];
+interface Prefs { subject: string; tone: string; count: number; start: string; time: string; notes: string; auto: boolean; c: CampaignPrefs; tab?: Tab }
 
 /** Direct mode: the vault locks itself after this much time without any click or key press. */
 const IDLE_LOCK_MS = 15 * 60_000;
@@ -95,7 +97,7 @@ export class DolphinStudioElement extends HTMLElement {
   private cfg?: DolphinConfig;
   private studio?: DolphinStudio;
   private renderer = new CanvasPosterRenderer();
-  private store?: LocalStore;
+  private store?: IdbStore;
   private vault?: Vault;
   private secrets: StudioSecrets | null = null;
   private passphrase = "";
@@ -122,6 +124,16 @@ export class DolphinStudioElement extends HTMLElement {
     });
     this.root.addEventListener("submit", e => void this.onSubmit(e));
     for (const ev of ["pointerdown", "keydown"]) this.root.addEventListener(ev, () => this.armIdleLock(), { passive: true });
+    // arrow keys move between tabs (WAI-ARIA tabs pattern)
+    this.root.addEventListener("keydown", e => {
+      const k = (e as KeyboardEvent).key, el = e.target as HTMLElement;
+      if (!el.matches?.('[role="tab"]') || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(k)) return;
+      const tabs = [...this.root.querySelectorAll<HTMLElement>('[role="tab"]')];
+      const i = tabs.indexOf(el), rtl = this.getAttribute("dir") === "rtl";
+      const next = k === "Home" ? 0 : k === "End" ? tabs.length - 1 : (i + ((k === "ArrowRight") !== rtl ? 1 : -1) + tabs.length) % tabs.length;
+      e.preventDefault();
+      void this.openTab(tabs[next]!.dataset.tab as Tab).then(() => this.root.querySelector<HTMLElement>(`#dt-${tabs[next]!.dataset.tab}`)?.focus());
+    });
   }
 
   disconnectedCallback(): void { clearTimeout(this.idleTimer); }
@@ -175,7 +187,7 @@ export class DolphinStudioElement extends HTMLElement {
     this.t = MESSAGES[lang];
     this.setAttribute("dir", lang === "ar" ? "rtl" : "ltr");
     this.siteUrl = cfg.siteUrl ?? (globalThis.location ? `${location.origin}/` : "");
-    this.store = new LocalStore(`dolphin:${initial.id}:`);
+    this.store = new IdbStore(`dolphin:${initial.id}:`);
     this.renderer = new CanvasPosterRenderer({ ...(cfg.fonts ? { fonts: cfg.fonts } : {}), contactLabel: b => (b.contact.whatsapp ? "WhatsApp" : this.t.contact) });
     this.studio = new DolphinStudio({ brand: initial, brandLocked: !!cfg.brand, renderer: this.renderer, store: this.store });
     await this.studio.load();
@@ -228,11 +240,18 @@ export class DolphinStudioElement extends HTMLElement {
     else if (this.view === "setup" || this.view === "lock") body = this.lockView();
     else {
       const st = this.studio!;
-      body = (this.cfg!.showConnections === false ? "" : this.connectionsView())
-        + siteCard({ t: this.t, brand: st.brand, locked: st.brandLocked, saved: st.hasSavedBrand, draft: this.draft, logoCandidates: this.logoCandidates, siteUrl: this.siteUrl, busy: this.busy, canAnalyze: st.canGenerate })
-        + (this.ready ? ideasCard(this.t, st.ideas, this.busy, st.canGenerate, st.canGenerate) + peakCard(this.t, st.peaks, this.busy)
-          + insightsCard(this.t, this.uiLang, st.insights, st.importedData, this.busy) + this.generateView()
-          + calendarCard(this.t, this.uiLang, st.list(), new Date()) + this.postsView() : "");
+      const settings = (this.cfg!.showConnections === false ? "" : this.connectionsView())
+        + siteCard({ t: this.t, brand: st.brand, locked: st.brandLocked, saved: st.hasSavedBrand, draft: this.draft, logoCandidates: this.logoCandidates, siteUrl: this.siteUrl, busy: this.busy, canAnalyze: st.canGenerate });
+      if (!this.ready) body = settings; // first step: read the site and save the profile
+      else {
+        const tab = this.currentTab(!!settings);
+        const panel = tab === "create" ? ideasCard(this.t, st.ideas, this.busy, st.canGenerate, st.canGenerate) + this.generateView()
+          : tab === "posts" ? this.postsView()
+          : tab === "calendar" ? calendarCard(this.t, this.uiLang, st.list(), new Date()) || `<p class="empty">${esc(t.empty)}</p>`
+          : tab === "audience" ? peakCard(this.t, st.peaks, this.busy) + insightsCard(this.t, this.uiLang, st.insights, st.importedData, this.busy)
+          : settings;
+        body = this.tabsView(tab, !!settings) + `<section role="tabpanel" id="dp-${tab}" aria-labelledby="dt-${tab}">${panel}</section>`;
+      }
     }
     // panels the user opened stay open across re-renders
     const open = new Set([...this.root.querySelectorAll<HTMLDetailsElement>("details[data-k]")].map(d => [d.dataset.k!, d.open] as const).filter(([, o]) => o).map(([k]) => k));
@@ -242,6 +261,34 @@ export class DolphinStudioElement extends HTMLElement {
       if (open.has(d.dataset.k!)) d.open = true; else if (closed.has(d.dataset.k!)) d.open = false;
     });
     this.drawAll();
+  }
+
+  /** The open tab: the saved one, or the settings while no AI key is connected. */
+  private currentTab(hasSettings: boolean): Tab {
+    let tab: Tab = TABS.includes(this.prefs.tab as Tab) ? this.prefs.tab! : "create";
+    if (!this.studio!.canGenerate && hasSettings && this.mode === "direct" && !this.prefs.tab) tab = "settings";
+    if (tab === "settings" && !hasSettings) tab = "create";
+    return tab;
+  }
+
+  private tabsView(current: Tab, hasSettings: boolean): string {
+    const t = this.t, posts = this.studio!.list();
+    const todo = posts.filter(p => p.status === "draft" || p.status === "failed").length;
+    const upcoming = posts.filter(p => p.status === "scheduled" && new Date(p.scheduledAt) > new Date()).length;
+    const needsKeys = this.mode === "direct" && !this.studio!.canGenerate;
+    const badge: Partial<Record<Tab, string>> = {
+      ...(todo ? { posts: String(todo) } : {}), ...(upcoming ? { calendar: String(upcoming) } : {}), ...(needsKeys ? { settings: "!" } : {}),
+    };
+    const icons: Record<Tab, string> = { create: "✦", posts: "▦", calendar: "◷", audience: "↗", settings: "⚙" };
+    return `<nav class="tabs" role="tablist" aria-label="DOLPHin">${TABS.filter(k => k !== "settings" || hasSettings).map(k =>
+      `<button role="tab" class="tab" id="dt-${k}" data-act="tab" data-tab="${k}" aria-selected="${k === current}" aria-controls="dp-${k}" tabindex="${k === current ? 0 : -1}">
+        <span aria-hidden="true">${icons[k]}</span> ${esc(t.tabs[k])}${badge[k] ? ` <span class="count${badge[k] === "!" ? " warn" : ""}">${esc(badge[k])}</span>` : ""}</button>`).join("")}</nav>`;
+  }
+
+  private async openTab(tab: Tab): Promise<void> {
+    this.prefs.tab = tab;
+    this.render(); // switch at once, save after
+    await this.store!.set("prefs", JSON.stringify(this.prefs)).catch(() => undefined);
   }
 
   private lockView(): string {
@@ -518,6 +565,7 @@ export class DolphinStudioElement extends HTMLElement {
         case "story": { const copy = await studio.duplicate(id, { format: "story" }); this.render(); this.goto(copy.id); this.toast(this.t.duplicated, "success"); break; }
         case "no-photo": await studio.update(id, { design: { photo: "" } }); this.render(); break;
         case "goto": this.goto(id); break;
+        case "tab": await this.openTab(b.dataset.tab as Tab); break;
         case "export-csv": this.save(new Blob([studio.exportCsv()], { type: "text/csv;charset=utf-8" }), `dolphin-plan-${new Date().toISOString().slice(0, 10)}.csv`); break;
         case "clear-import": { this.busy = true; this.render(); await studio.clearImport(); this.busy = false; this.render(); break; }
         case "copy": await navigator.clipboard.writeText(studio.caption(id)); this.toast(this.t.copied, "success"); break;
@@ -574,7 +622,7 @@ export class DolphinStudioElement extends HTMLElement {
       time: p.auto ? "auto" : p.time,
       ...this.campaignOptions(),
     });
-    this.busy = false; this.render();
+    this.busy = false; this.prefs.tab = "posts"; this.render();
     this.toast(fill(this.t.generated, { n: posts.length, cost: usd(estimateCostUsd(usage, model)) }), "success");
   }
 
@@ -632,9 +680,13 @@ export class DolphinStudioElement extends HTMLElement {
   private async saveProfile(): Promise<void> {
     if (!this.draft) return;
     const draft = { ...this.draft, products: this.draft.products.filter(p => p.name.trim()) };
-    await this.studio!.setBrand(draft);
+    const saved = await this.studio!.setBrand(draft);
     this.draft = null;
     this.applyBrandLook();
+    if (!this.cfg!.lang) { // the interface follows the language of the saved profile
+      this.t = MESSAGES[saved.language];
+      this.setAttribute("dir", saved.language === "ar" ? "rtl" : "ltr");
+    }
     this.render();
     this.toast(this.t.profileSaved, "success");
   }
@@ -652,7 +704,7 @@ export class DolphinStudioElement extends HTMLElement {
       time: this.prefs.auto ? "auto" : this.prefs.time,
       ...this.campaignOptions(),
     });
-    this.busy = false; this.render();
+    this.busy = false; this.prefs.tab = "posts"; this.render();
     this.toast(fill(this.t.generated, { n: posts.length, cost: usd(estimateCostUsd(usage, model)) }), "success");
   }
 
@@ -673,7 +725,7 @@ export class DolphinStudioElement extends HTMLElement {
   private async download(id: string, type: "image/png" | "image/jpeg" = "image/png"): Promise<void> {
     const post = this.studio!.get(id);
     if (!post) return;
-    const blob = type === "image/png" ? await this.studio!.renderImage(id) : await this.renderer.export(post, this.studio!.brand, type);
+    const blob = await this.renderer.export(post, this.studio!.brand, type);
     this.save(blob, `dolphin-${id.slice(0, 8)}-${post.design?.format ?? "portrait"}.${type === "image/png" ? "png" : "jpg"}`);
   }
 
@@ -687,6 +739,7 @@ export class DolphinStudioElement extends HTMLElement {
 
   /** Scrolls to a post card and highlights it for a moment. */
   private goto(id: string): void {
+    if (this.prefs.tab !== "posts") { this.prefs.tab = "posts"; void this.store!.set("prefs", JSON.stringify(this.prefs)); this.render(); }
     const card = this.root.querySelector<HTMLElement>(`article[data-post="${CSS.escape(id)}"]`);
     if (!card) return;
     card.scrollIntoView({ behavior: "smooth", block: "start" });

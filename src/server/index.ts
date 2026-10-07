@@ -11,7 +11,7 @@ import { DolphinError, HTTP_STATUS, isDolphinError } from "../core/errors.js";
 import type { BrandProfile } from "../core/types.js";
 import type { LlmPort, PublisherPort } from "../ports/index.js";
 
-export const VERSION = "0.4.0";
+export const VERSION = "0.5.0";
 
 export interface ServerOptions {
   llm?: LlmPort;
@@ -152,14 +152,17 @@ export function createDolphinHandler(opts: ServerOptions): Handler {
       if (typeof body.imageBase64 !== "string" || !body.imageBase64) throw new DolphinError("invalid_request", "imageBase64 is required.");
       if (typeof body.caption !== "string" || body.caption.length > 5000) throw new DolphinError("invalid_request", "caption must be a string of at most 5000 characters.");
       const bytes = Buffer.from(body.imageBase64, "base64");
-      if (bytes.length === 0 || bytes.length > MAX_IMAGE_BYTES) throw new DolphinError("invalid_request", "The image must be a PNG of at most 8 MB.");
-      if (bytes.subarray(0, 8).toString("hex") !== "89504e470d0a1a0a") throw new DolphinError("invalid_request", "The image must be a PNG.");
+      if (bytes.length === 0 || bytes.length > MAX_IMAGE_BYTES) throw new DolphinError("invalid_request", "The image must be a PNG or JPEG of at most 8 MB.");
+      // the type is read from the file itself, never from what the client says
+      const type = bytes.subarray(0, 8).toString("hex") === "89504e470d0a1a0a" ? "image/png"
+        : bytes.subarray(0, 3).toString("hex") === "ffd8ff" ? "image/jpeg" : null;
+      if (!type) throw new DolphinError("invalid_request", "The image must be a PNG or JPEG.");
       let scheduledAt: Date | undefined;
       if (body.scheduledAt !== undefined) {
         scheduledAt = new Date(String(body.scheduledAt));
         if (Number.isNaN(scheduledAt.getTime())) throw new DolphinError("invalid_request", "scheduledAt must be an ISO date.");
       }
-      return opts.publisher.publish({ image: new Blob([bytes], { type: "image/png" }), caption: body.caption, ...(scheduledAt ? { scheduledAt } : {}) });
+      return opts.publisher.publish({ image: new Blob([bytes], { type }), caption: body.caption, ...(scheduledAt ? { scheduledAt } : {}) });
     },
 
     "GET /v1/publisher/history": async () => {

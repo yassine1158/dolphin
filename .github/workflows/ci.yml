@@ -18,3 +18,25 @@ jobs:
       - run: npm run build
       - name: dist/ and docs/ are up to date
         run: git diff --exit-code -- dist docs ':!dist/**/*.map'
+
+  e2e:
+    # the widget in a real browser: proxy and direct modes, designer, marketing, audience, Arabic
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - run: npm run build
+      - run: npm run e2e
+        env:
+          E2E_OUT: e2e-screens
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-screens
+          path: e2e-screens
+          retention-days: 7

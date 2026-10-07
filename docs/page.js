@@ -44,6 +44,31 @@
     renderer.draw(canvas, { ...d, id: "h" + i, createdAt: "", scheduledAt: "", status: "draft" }, brand);
   });
 
+  // ---------------------------------------------------------------- one post, three formats and three layouts
+  // a warm, blurred "bakery" picture drawn on the fly: the page needs no photo file
+  const photo = (() => {
+    const c = document.createElement("canvas"); c.width = 1400; c.height = 1400;
+    const g = c.getContext("2d");
+    const bg = g.createLinearGradient(0, 0, 1400, 1400); bg.addColorStop(0, "#5a2d10"); bg.addColorStop(0.5, "#b8641f"); bg.addColorStop(1, "#2b1407");
+    g.fillStyle = bg; g.fillRect(0, 0, 1400, 1400);
+    for (let i = 0; i < 70; i++) {
+      const x = (i * 397) % 1400, y = (i * 211) % 1400, r = 40 + (i * 37) % 160;
+      const b = g.createRadialGradient(x, y, 0, x, y, r);
+      b.addColorStop(0, `rgba(255, ${190 + (i % 5) * 12}, ${90 + (i % 4) * 20}, ${0.18 + (i % 3) * 0.08})`); b.addColorStop(1, "rgba(255,200,120,0)");
+      g.fillStyle = b; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+    }
+    g.fillStyle = "#e9b36a"; // a loaf
+    g.beginPath(); g.ellipse(700, 900, 430, 150, -0.12, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = "rgba(120,60,20,.55)"; g.lineWidth = 22; g.lineCap = "round";
+    for (const dx of [-220, -60, 100, 260]) { g.beginPath(); g.moveTo(700 + dx - 60, 870); g.quadraticCurveTo(700 + dx, 820, 700 + dx + 70, 860); g.stroke(); }
+    return c.toDataURL("image/jpeg", 0.86);
+  })();
+  const formats = { portrait: { layout: "split", photo }, square: { layout: "centered" }, story: { layout: "classic", photo } };
+  document.querySelectorAll("canvas[data-format]").forEach((canvas, i) => {
+    const f = canvas.dataset.format, d = DRAFTS[[0, 4, 3][i]];
+    renderer.draw(canvas, { ...d, id: "f" + i, createdAt: "", scheduledAt: "", status: "draft", design: { format: f, ...formats[f] } }, brand);
+  });
+
   // ---------------------------------------------------------------- peak times, computed by DOLPHin's own algorithm
   const HEAT = ["#cde2fb", "#9ec5f4", "#5598e7", "#256abf", "#104281"];
   const DAYS = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"];
@@ -62,7 +87,7 @@
   // ---------------------------------------------------------------- reveal on scroll, staggered heat map, copy buttons
   document.documentElement.classList.add("js");
   document.querySelectorAll("#peak-map .c").forEach((c, i) => c.style.setProperty("--d", (i % 7) * 0.04 + Math.floor(i / 6) * 0.03 + "s"));
-  document.querySelectorAll(".keys .rv, .who-grid .rv, .code-steps .rv, .plans .rv, .timeline .rv").forEach((el, i, all) => {
+  document.querySelectorAll(".keys .rv, .who-grid .rv, .team-grid .rv, .sec-grid .rv, .code-steps .rv, .plans .rv, .timeline .rv").forEach((el, i, all) => {
     const siblings = [...el.parentElement.children];
     el.style.setProperty("--d", siblings.indexOf(el) * 0.08 + "s");
   });

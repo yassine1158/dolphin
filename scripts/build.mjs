@@ -3,7 +3,7 @@ import { build } from "esbuild";
 import { copyFileSync, rmSync } from "node:fs";
 
 rmSync("dist", { recursive: true, force: true });
-const banner = { js: "/*! DOLPHin 0.4.0 · (c) 2026 Yassine Chaabane · SPDX-License-Identifier: AGPL-3.0-only · Licence commerciale : COMMERCIAL-LICENSE.md · Logiciels tiers : THIRD-PARTY-NOTICES.md */" };
+const banner = { js: "/*! DOLPHin 0.5.0 · (c) 2026 Yassine Chaabane · SPDX-License-Identifier: AGPL-3.0-only · Licence commerciale : COMMERCIAL-LICENSE.md · Logiciels tiers : THIRD-PARTY-NOTICES.md */" };
 const common = { bundle: true, sourcemap: true, target: "es2022", legalComments: "eof", logLevel: "info" };
 
 await Promise.all([

@@ -1,7 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { BrandProfile } from "../core/types.js";
 import type { LlmPort, PublisherPort } from "../ports/index.js";
-export declare const VERSION = "0.4.0";
+export declare const VERSION = "0.5.0";
 export interface ServerOptions {
     llm?: LlmPort;
     publisher?: PublisherPort;

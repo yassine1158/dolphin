@@ -147,6 +147,13 @@ declare const fr: {
         bold: string;
     };
     contact: string;
+    tabs: {
+        create: string;
+        posts: string;
+        calendar: string;
+        audience: string;
+        settings: string;
+    };
     campaign: string;
     objective: string;
     objectives: {
@@ -178,6 +185,7 @@ declare const fr: {
         classic: string;
         centered: string;
         minimal: string;
+        split: string;
     };
     photo: string;
     addPhoto: string;
@@ -247,6 +255,7 @@ declare const fr: {
         too_long: string;
         schedule_window: string;
         not_configured: string;
+        storage_full: string;
         unknown: string;
     };
 };
