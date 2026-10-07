@@ -58,4 +58,24 @@
       return `<span class="c" style="background:${HEAT[Math.min(4, Math.floor(v * 5))]}" title="${esc(label)}" aria-label="${esc(label)}" role="img"></span>`;
     }).join("")}</div>`).join("");
   document.getElementById("peak-best").innerHTML = report.best.map((b, i) => `<span>${i + 1}. ${DAYS[b.day]} <b>${b.hour} h</b></span>`).join("");
+
+  // ---------------------------------------------------------------- reveal on scroll, staggered heat map, copy buttons
+  document.documentElement.classList.add("js");
+  document.querySelectorAll("#peak-map .c").forEach((c, i) => c.style.setProperty("--d", (i % 7) * 0.04 + Math.floor(i / 6) * 0.03 + "s"));
+  document.querySelectorAll(".keys .rv, .who-grid .rv, .code-steps .rv, .plans .rv, .timeline .rv").forEach((el, i, all) => {
+    const siblings = [...el.parentElement.children];
+    el.style.setProperty("--d", siblings.indexOf(el) * 0.08 + "s");
+  });
+  const show = el => el.classList.add("in");
+  if ("IntersectionObserver" in window) {
+    const io = new IntersectionObserver(entries => entries.forEach(e => { if (e.isIntersecting) { show(e.target); io.unobserve(e.target); } }), { rootMargin: "0px 0px -8% 0px", threshold: 0.08 });
+    document.querySelectorAll(".rv").forEach(el => io.observe(el));
+  } else document.querySelectorAll(".rv").forEach(show);
+
+  document.querySelectorAll(".win .copy").forEach(btn => btn.addEventListener("click", async () => {
+    const code = btn.closest(".win").querySelector("code").textContent;
+    try { await navigator.clipboard.writeText(code); btn.textContent = "Copié ✓"; }
+    catch (e) { btn.textContent = "Sélectionnez le code"; }
+    setTimeout(() => { btn.textContent = "Copier"; }, 1800);
+  }));
 })();
