@@ -175,85 +175,29 @@ function validateGenerateRequest(input) {
   if (avoid) req.avoidTitles = avoid;
   return req;
 }
-
-// src/core/prompt.ts
-var LANGUAGE = { fr: "French", en: "English", ar: "Modern Standard Arabic" };
-var line = (label, value) => value ? `${label}: ${value}
-` : "";
-function buildSystemPrompt(brand) {
-  const rules = brand.rules ?? {};
-  const available = brand.products.filter((p) => p.status === "available");
-  const soon = brand.products.filter((p) => p.status === "soon");
-  const fmt = (p) => `- ${p.name}${p.details ? ` \u2014 ${p.details}` : ""}`;
-  const contact = [brand.contact.whatsapp && `WhatsApp ${brand.contact.whatsapp}`, brand.contact.phone && `phone ${brand.contact.phone}`, brand.contact.website].filter(Boolean).join(", ");
-  const hard = [
-    'Only sell what is AVAILABLE. Products coming soon are only announced ("coming soon", "be the first to know"), never sold.',
-    "Never invent facts, figures, promises, awards, discounts or certifications that are not written in this prompt.",
-    "Technical advice must be accurate and cautious.",
-    "Every post differs from the others: angle, title and theme."
-  ];
-  if (rules.hidePrices !== false) hard.push("Never give a price, a minimum quantity, a selling unit or a delivery delay: those are discussed privately with the customer.");
-  for (const topic of rules.neverMention ?? []) hard.push(`Never mention: ${topic}.`);
-  if (brand.fullName) hard.push(`When the full company name is used, write it exactly: "${brand.fullName}".`);
-  for (const x of rules.extra ?? []) hard.push(x);
-  return `You are the social media manager of ${brand.name}${brand.fullName ? ` (${brand.fullName})` : ""}.
-You write Facebook and Instagram posts in ${LANGUAGE[brand.language]}, in simple and warm wording.
-${line("Location", brand.location)}${line("Audience", brand.audience)}${line("Contact for the call to action", contact)}
-Available now:
-${available.length ? available.map(fmt).join("\n") : "- (nothing is sold yet: only announce)"}
-${soon.length ? `
-Coming soon:
-${soon.map(fmt).join("\n")}
-` : ""}
-Rules you never break:
-${hard.map((r) => "- " + r).join("\n")}`;
-}
-function buildUserPrompt(req) {
-  const parts = [`Write ${req.count} post(s). They will be published one per day, in order.`];
-  if (req.subject) parts.push(`Subject: ${req.subject}.`);
-  if (req.tone) parts.push(`Tone: ${req.tone}.`);
-  if (req.notes) parts.push(`Instruction from the manager: ${req.notes}`);
-  if (req.avoidTitles?.length) parts.push(`Titles already used, do not repeat them:
-${req.avoidTitles.map((t) => "- " + t).join("\n")}`);
-  return parts.join("\n");
-}
-
-// src/core/schedule.ts
-var SCHEDULE_MIN_MS = 10 * 6e4;
-var SCHEDULE_MAX_MS = 30 * 864e5;
-function planSchedule(count, start, time = "19:00", everyDays = 1) {
-  const [h, m] = time.split(":").map((n) => Number.parseInt(n, 10));
-  return Array.from({ length: count }, (_, i) => {
-    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i * everyDays);
-    d.setHours(Number.isFinite(h) ? h : 19, Number.isFinite(m) ? m : 0, 0, 0);
-    return d;
-  });
-}
-function assertSchedulable(at, now = /* @__PURE__ */ new Date()) {
-  const delta = at.getTime() - now.getTime();
-  if (!Number.isFinite(delta) || delta < SCHEDULE_MIN_MS || delta > SCHEDULE_MAX_MS) {
-    throw new DolphinError("schedule_window", "The date must be between 10 minutes and 30 days from now.");
+function validateSnapshot(input) {
+  const v = obj(input, "snapshot");
+  const snap = {
+    url: text(v.url, "snapshot.url", 500, true),
+    headings: list(v.headings, "snapshot.headings", 40, 200) ?? [],
+    text: text(v.text, "snapshot.text", 8e3) ?? "",
+    phones: list(v.phones, "snapshot.phones", 10, 40) ?? [],
+    whatsapp: list(v.whatsapp, "snapshot.whatsapp", 10, 40) ?? [],
+    emails: list(v.emails, "snapshot.emails", 10, 120) ?? [],
+    logoCandidates: list(v.logoCandidates, "snapshot.logoCandidates", 10, 1e3) ?? [],
+    structured: {}
+  };
+  for (const k of ["lang", "title", "description", "siteName", "themeColor"]) {
+    const t = text(v[k], `snapshot.${k}`, 400);
+    if (t) snap[k] = t;
   }
+  const st = v.structured === void 0 ? {} : obj(v.structured, "snapshot.structured");
+  for (const [k, val] of Object.entries(st).slice(0, 20)) {
+    const t = text(val, `snapshot.structured.${k}`, 400);
+    if (t) snap.structured[k.slice(0, 40)] = t;
+  }
+  return snap;
 }
-function toLocalInput(d) {
-  const p = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
-}
-
-// src/core/cost.ts
-var MODEL_PRICING = {
-  "claude-opus-5-5": { input: 4, output: 20, label: "Claude Opus 5.5" },
-  "claude-sonnet-5-5": { input: 2, output: 10, label: "Claude Sonnet 5.5" }
-};
-var DEFAULT_MODEL = "claude-opus-5-5";
-function estimateCostUsd(usage, model) {
-  const price = MODEL_PRICING[model] ?? MODEL_PRICING[DEFAULT_MODEL];
-  return (usage.inputTokens * price.input + usage.outputTokens * price.output) / 1e6;
-}
-var estimatePerPostUsd = (model) => estimateCostUsd({ inputTokens: 3e3, outputTokens: 1500 }, model);
-
-// src/adapters/llm/claude.ts
-import Anthropic from "@anthropic-ai/sdk";
 
 // src/core/analysis.ts
 var MAX_IDEAS = 10;
@@ -386,7 +330,84 @@ ${known}
 Analyze this business and propose the post ideas.` };
 }
 
+// src/core/prompt.ts
+var LANGUAGE = { fr: "French", en: "English", ar: "Modern Standard Arabic" };
+var line = (label, value) => value ? `${label}: ${value}
+` : "";
+function buildSystemPrompt(brand) {
+  const rules = brand.rules ?? {};
+  const available = brand.products.filter((p) => p.status === "available");
+  const soon = brand.products.filter((p) => p.status === "soon");
+  const fmt = (p) => `- ${p.name}${p.details ? ` \u2014 ${p.details}` : ""}`;
+  const contact = [brand.contact.whatsapp && `WhatsApp ${brand.contact.whatsapp}`, brand.contact.phone && `phone ${brand.contact.phone}`, brand.contact.website].filter(Boolean).join(", ");
+  const hard = [
+    'Only sell what is AVAILABLE. Products coming soon are only announced ("coming soon", "be the first to know"), never sold.',
+    "Never invent facts, figures, promises, awards, discounts or certifications that are not written in this prompt.",
+    "Technical advice must be accurate and cautious.",
+    "Every post differs from the others: angle, title and theme."
+  ];
+  if (rules.hidePrices !== false) hard.push("Never give a price, a minimum quantity, a selling unit or a delivery delay: those are discussed privately with the customer.");
+  for (const topic of rules.neverMention ?? []) hard.push(`Never mention: ${topic}.`);
+  if (brand.fullName) hard.push(`When the full company name is used, write it exactly: "${brand.fullName}".`);
+  for (const x of rules.extra ?? []) hard.push(x);
+  return `You are the social media manager of ${brand.name}${brand.fullName ? ` (${brand.fullName})` : ""}.
+You write Facebook and Instagram posts in ${LANGUAGE[brand.language]}, in simple and warm wording.
+${line("Location", brand.location)}${line("Audience", brand.audience)}${line("Contact for the call to action", contact)}
+Available now:
+${available.length ? available.map(fmt).join("\n") : "- (nothing is sold yet: only announce)"}
+${soon.length ? `
+Coming soon:
+${soon.map(fmt).join("\n")}
+` : ""}
+Rules you never break:
+${hard.map((r) => "- " + r).join("\n")}`;
+}
+function buildUserPrompt(req) {
+  const parts = [`Write ${req.count} post(s). They will be published one per day, in order.`];
+  if (req.subject) parts.push(`Subject: ${req.subject}.`);
+  if (req.tone) parts.push(`Tone: ${req.tone}.`);
+  if (req.notes) parts.push(`Instruction from the manager: ${req.notes}`);
+  if (req.avoidTitles?.length) parts.push(`Titles already used, do not repeat them:
+${req.avoidTitles.map((t) => "- " + t).join("\n")}`);
+  return parts.join("\n");
+}
+
+// src/core/schedule.ts
+var SCHEDULE_MIN_MS = 10 * 6e4;
+var SCHEDULE_MAX_MS = 30 * 864e5;
+function planSchedule(count, start, time = "19:00", everyDays = 1) {
+  const [h, m] = time.split(":").map((n) => Number.parseInt(n, 10));
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i * everyDays);
+    d.setHours(Number.isFinite(h) ? h : 19, Number.isFinite(m) ? m : 0, 0, 0);
+    return d;
+  });
+}
+function assertSchedulable(at, now = /* @__PURE__ */ new Date()) {
+  const delta = at.getTime() - now.getTime();
+  if (!Number.isFinite(delta) || delta < SCHEDULE_MIN_MS || delta > SCHEDULE_MAX_MS) {
+    throw new DolphinError("schedule_window", "The date must be between 10 minutes and 30 days from now.");
+  }
+}
+function toLocalInput(d) {
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// src/core/cost.ts
+var MODEL_PRICING = {
+  "claude-opus-5-5": { input: 4, output: 20, label: "Claude Opus 5.5" },
+  "claude-sonnet-5-5": { input: 2, output: 10, label: "Claude Sonnet 5.5" }
+};
+var DEFAULT_MODEL = "claude-opus-5-5";
+function estimateCostUsd(usage, model) {
+  const price = MODEL_PRICING[model] ?? MODEL_PRICING[DEFAULT_MODEL];
+  return (usage.inputTokens * price.input + usage.outputTokens * price.output) / 1e6;
+}
+var estimatePerPostUsd = (model) => estimateCostUsd({ inputTokens: 3e3, outputTokens: 1500 }, model);
+
 // src/adapters/llm/claude.ts
+import Anthropic from "@anthropic-ai/sdk";
 var ClaudeLlm = class {
   model;
   client;
@@ -664,6 +685,110 @@ var Vault = class {
     await this.store.delete(KEY);
   }
 };
+
+// src/adapters/site.ts
+var MAX_TEXT = 6e3;
+var clean = (t) => (t ?? "").replace(/\s+/g, " ").trim();
+var uniq = (a) => [...new Set(a)];
+function abs(href, base) {
+  if (!href) return null;
+  try {
+    const u = new URL(href, base);
+    return u.protocol === "http:" || u.protocol === "https:" || u.protocol === "data:" ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+function businessNodes(doc) {
+  const out = [];
+  const kinds = /Organization|LocalBusiness|Store|Restaurant|Bakery|Shop|Corporation|Brand|Farm|Service/i;
+  const visit = (n) => {
+    if (Array.isArray(n)) return n.forEach(visit);
+    if (!n || typeof n !== "object") return;
+    const o = n;
+    const type = [].concat(o["@type"] ?? []).join(" ");
+    if (kinds.test(type)) out.push(o);
+    if (o["@graph"]) visit(o["@graph"]);
+  };
+  doc.querySelectorAll('script[type="application/ld+json"]').forEach((s2) => {
+    try {
+      visit(JSON.parse(s2.textContent ?? ""));
+    } catch {
+    }
+  });
+  return out;
+}
+var str2 = (v) => {
+  if (typeof v === "string") return v;
+  if (v && typeof v === "object") {
+    const o = v;
+    if (typeof o.url === "string") return o.url;
+    return ["streetAddress", "addressLocality", "addressRegion", "addressCountry"].map((k) => typeof o[k] === "string" ? o[k] : "").filter(Boolean).join(", ");
+  }
+  return "";
+};
+function snapshotFromDocument(doc, url) {
+  const meta = (sel) => clean(doc.querySelector(sel)?.getAttribute("content"));
+  const nodes = businessNodes(doc);
+  const structured = {};
+  for (const n of nodes) {
+    for (const k of ["name", "legalName", "description", "telephone", "email", "address", "logo", "url"]) {
+      const v = clean(str2(n[k]));
+      if (v && !structured[k]) structured[k] = v.slice(0, 300);
+    }
+  }
+  const logos = [];
+  if (structured.logo) logos.push(abs(structured.logo, url));
+  doc.querySelectorAll("header img, nav img, [class*=logo] img, img[class*=logo], img[id*=logo], img[alt*=logo i], img[src*=logo]").forEach((img) => {
+    logos.push(abs(img.getAttribute("src"), url));
+  });
+  logos.push(abs(meta('meta[property="og:logo"]'), url));
+  const icons = [...doc.querySelectorAll('link[rel~="apple-touch-icon"], link[rel~="icon"]')].map((l) => ({ href: abs(l.getAttribute("href"), url), size: Number.parseInt(l.getAttribute("sizes") ?? "", 10) || (/\.svg(\?|$)/i.test(l.getAttribute("href") ?? "") ? 512 : 32) })).sort((a, b) => b.size - a.size);
+  icons.forEach((i) => logos.push(i.href));
+  logos.push(abs(meta('meta[property="og:image"]'), url));
+  const links = [...doc.querySelectorAll("a[href]")].map((a) => a.getAttribute("href") ?? "");
+  const phones = links.filter((h) => h.startsWith("tel:")).map((h) => decodeURIComponent(h.slice(4)).trim());
+  if (structured.telephone) phones.unshift(structured.telephone);
+  const whatsapp = links.flatMap((h) => {
+    const m = h.match(/(?:wa\.me\/|api\.whatsapp\.com\/send\?phone=|whatsapp:\/\/send\?phone=)\+?(\d{6,15})/i);
+    return m ? ["+" + m[1]] : [];
+  });
+  const emails = links.filter((h) => h.startsWith("mailto:")).map((h) => decodeURIComponent(h.slice(7).split("?")[0] ?? "").trim());
+  const body = doc.body?.cloneNode(true);
+  body?.querySelectorAll("script, style, noscript, template, svg, iframe, dolphin-studio").forEach((n) => n.remove());
+  const headings = [...doc.querySelectorAll("h1, h2, h3")].map((h) => clean(h.textContent)).filter(Boolean);
+  const snap = {
+    url,
+    headings: uniq(headings).slice(0, 30).map((h) => h.slice(0, 160)),
+    text: clean(body?.textContent).slice(0, MAX_TEXT),
+    phones: uniq(phones).slice(0, 5),
+    whatsapp: uniq(whatsapp).slice(0, 5),
+    emails: uniq(emails).filter(Boolean).slice(0, 5),
+    logoCandidates: uniq(logos.filter((l) => !!l)).slice(0, 8),
+    structured
+  };
+  const set = (k, v) => {
+    if (v) snap[k] = v.slice(0, 300);
+  };
+  set("lang", clean(doc.documentElement.getAttribute("lang")));
+  set("title", clean(doc.querySelector("title")?.textContent));
+  set("description", meta('meta[name="description"]') || meta('meta[property="og:description"]'));
+  set("siteName", meta('meta[property="og:site_name"]') || structured.name || "");
+  set("themeColor", meta('meta[name="theme-color"]'));
+  return snap;
+}
+async function discoverSite(url, f = globalThis.fetch.bind(globalThis)) {
+  const target = new URL(url, globalThis.location?.href).href;
+  let html;
+  try {
+    const res = await f(target, { credentials: "same-origin" });
+    if (!res.ok) throw new Error(String(res.status));
+    html = await res.text();
+  } catch {
+    throw new DolphinError("network", `Cannot read ${target}. Use a page of this site, or one that allows CORS.`);
+  }
+  return snapshotFromDocument(new DOMParser().parseFromString(html, "text/html"), target);
+}
 
 // src/render/theme.ts
 function rgb(hex2) {
@@ -977,6 +1102,71 @@ var CanvasPosterRenderer = class {
   }
 };
 
+// src/render/colors.ts
+var hex = (r, g, b) => "#" + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
+function hsl(r, g, b) {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
+  if (!d) return [0, 0, l];
+  const s2 = d / (1 - Math.abs(2 * l - 1));
+  const h = max === r ? (g - b) / d % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [(h * 60 + 360) % 360, s2, l];
+}
+function deepen(color) {
+  let [r, g, b] = [1, 3, 5].map((i) => Number.parseInt(color.slice(i, i + 2), 16));
+  for (let i = 0; i < 20 && contrast(hex(r, g, b), "#ffffff") < 7; i++) {
+    r *= 0.88;
+    g *= 0.88;
+    b *= 0.88;
+  }
+  return hex(r, g, b);
+}
+var DEFAULT_COLORS = { primary: "#0b3f2f", accent: "#f3811d" };
+function pickBrandColors(pixels, fallback = DEFAULT_COLORS) {
+  const buckets = /* @__PURE__ */ new Map();
+  for (let i = 0; i + 3 < pixels.length; i += 4) {
+    const [r, g, b, a] = [pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3]];
+    if (a < 128) continue;
+    const key = `${r >> 4},${g >> 4},${b >> 4}`;
+    const e = buckets.get(key) ?? { n: 0, r: 0, g: 0, b: 0 };
+    e.n++;
+    e.r += r;
+    e.g += g;
+    e.b += b;
+    buckets.set(key, e);
+  }
+  const colors = [...buckets.values()].map((e) => {
+    const [r, g, b] = [e.r / e.n, e.g / e.n, e.b / e.n];
+    const [h, s2, l] = hsl(r, g, b);
+    return { n: e.n, hex: hex(r, g, b), h, s: s2, l };
+  }).filter((c) => c.l < 0.95 && c.l > 0.04);
+  if (!colors.length) return fallback;
+  const vivid = colors.filter((c) => c.s > 0.35).sort((a, b) => b.n * b.s - a.n * a.s);
+  const darkish = colors.filter((c) => luminance(c.hex) < 0.2 && c.s > 0.12).sort((a, b) => b.n - a.n);
+  let primary = darkish[0];
+  const distinct = (c) => !primary || c !== primary && (Math.min(Math.abs(c.h - primary.h), 360 - Math.abs(c.h - primary.h)) > 25 || luminance(c.hex) - luminance(primary.hex) > 0.3);
+  const accent = vivid.find((c) => luminance(c.hex) > 0.15 && distinct(c)) ?? vivid.find(distinct);
+  if (!primary) primary = vivid.find((c) => c !== accent) ?? accent;
+  if (!primary || !accent) return fallback;
+  if (primary === accent) return { primary: deepen(primary.hex), accent: fallback.accent };
+  return { primary: deepen(primary.hex), accent: accent.hex };
+}
+function colorsFromImage(img, fallback) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return fallback ?? DEFAULT_COLORS;
+  ctx.drawImage(img, 0, 0, 64, 64);
+  try {
+    return pickBrandColors(ctx.getImageData(0, 0, 64, 64).data, fallback);
+  } catch {
+    return fallback ?? DEFAULT_COLORS;
+  }
+}
+
 // src/app/studio.ts
 var EDITABLE = ["tag", "title", "subtitle", "points", "style", "theme", "caption", "hashtags", "scheduledAt"];
 var DolphinStudio = class {
@@ -1160,175 +1350,6 @@ var DolphinStudio = class {
     for (const fn of this.listeners) fn(this.posts);
   }
 };
-
-// src/adapters/site.ts
-var MAX_TEXT = 6e3;
-var clean = (t) => (t ?? "").replace(/\s+/g, " ").trim();
-var uniq = (a) => [...new Set(a)];
-function abs(href, base) {
-  if (!href) return null;
-  try {
-    const u = new URL(href, base);
-    return u.protocol === "http:" || u.protocol === "https:" || u.protocol === "data:" ? u.href : null;
-  } catch {
-    return null;
-  }
-}
-function businessNodes(doc) {
-  const out = [];
-  const kinds = /Organization|LocalBusiness|Store|Restaurant|Bakery|Shop|Corporation|Brand|Farm|Service/i;
-  const visit = (n) => {
-    if (Array.isArray(n)) return n.forEach(visit);
-    if (!n || typeof n !== "object") return;
-    const o = n;
-    const type = [].concat(o["@type"] ?? []).join(" ");
-    if (kinds.test(type)) out.push(o);
-    if (o["@graph"]) visit(o["@graph"]);
-  };
-  doc.querySelectorAll('script[type="application/ld+json"]').forEach((s2) => {
-    try {
-      visit(JSON.parse(s2.textContent ?? ""));
-    } catch {
-    }
-  });
-  return out;
-}
-var str2 = (v) => {
-  if (typeof v === "string") return v;
-  if (v && typeof v === "object") {
-    const o = v;
-    if (typeof o.url === "string") return o.url;
-    return ["streetAddress", "addressLocality", "addressRegion", "addressCountry"].map((k) => typeof o[k] === "string" ? o[k] : "").filter(Boolean).join(", ");
-  }
-  return "";
-};
-function snapshotFromDocument(doc, url) {
-  const meta = (sel) => clean(doc.querySelector(sel)?.getAttribute("content"));
-  const nodes = businessNodes(doc);
-  const structured = {};
-  for (const n of nodes) {
-    for (const k of ["name", "legalName", "description", "telephone", "email", "address", "logo", "url"]) {
-      const v = clean(str2(n[k]));
-      if (v && !structured[k]) structured[k] = v.slice(0, 300);
-    }
-  }
-  const logos = [];
-  if (structured.logo) logos.push(abs(structured.logo, url));
-  doc.querySelectorAll("header img, nav img, [class*=logo] img, img[class*=logo], img[id*=logo], img[alt*=logo i], img[src*=logo]").forEach((img) => {
-    logos.push(abs(img.getAttribute("src"), url));
-  });
-  logos.push(abs(meta('meta[property="og:logo"]'), url));
-  const icons = [...doc.querySelectorAll('link[rel~="apple-touch-icon"], link[rel~="icon"]')].map((l) => ({ href: abs(l.getAttribute("href"), url), size: Number.parseInt(l.getAttribute("sizes") ?? "", 10) || (/\.svg(\?|$)/i.test(l.getAttribute("href") ?? "") ? 512 : 32) })).sort((a, b) => b.size - a.size);
-  icons.forEach((i) => logos.push(i.href));
-  logos.push(abs(meta('meta[property="og:image"]'), url));
-  const links = [...doc.querySelectorAll("a[href]")].map((a) => a.getAttribute("href") ?? "");
-  const phones = links.filter((h) => h.startsWith("tel:")).map((h) => decodeURIComponent(h.slice(4)).trim());
-  if (structured.telephone) phones.unshift(structured.telephone);
-  const whatsapp = links.flatMap((h) => {
-    const m = h.match(/(?:wa\.me\/|api\.whatsapp\.com\/send\?phone=|whatsapp:\/\/send\?phone=)\+?(\d{6,15})/i);
-    return m ? ["+" + m[1]] : [];
-  });
-  const emails = links.filter((h) => h.startsWith("mailto:")).map((h) => decodeURIComponent(h.slice(7).split("?")[0] ?? "").trim());
-  const body = doc.body?.cloneNode(true);
-  body?.querySelectorAll("script, style, noscript, template, svg, iframe, dolphin-studio").forEach((n) => n.remove());
-  const headings = [...doc.querySelectorAll("h1, h2, h3")].map((h) => clean(h.textContent)).filter(Boolean);
-  const snap = {
-    url,
-    headings: uniq(headings).slice(0, 30).map((h) => h.slice(0, 160)),
-    text: clean(body?.textContent).slice(0, MAX_TEXT),
-    phones: uniq(phones).slice(0, 5),
-    whatsapp: uniq(whatsapp).slice(0, 5),
-    emails: uniq(emails).filter(Boolean).slice(0, 5),
-    logoCandidates: uniq(logos.filter((l) => !!l)).slice(0, 8),
-    structured
-  };
-  const set = (k, v) => {
-    if (v) snap[k] = v.slice(0, 300);
-  };
-  set("lang", clean(doc.documentElement.getAttribute("lang")));
-  set("title", clean(doc.querySelector("title")?.textContent));
-  set("description", meta('meta[name="description"]') || meta('meta[property="og:description"]'));
-  set("siteName", meta('meta[property="og:site_name"]') || structured.name || "");
-  set("themeColor", meta('meta[name="theme-color"]'));
-  return snap;
-}
-async function discoverSite(url, f = globalThis.fetch.bind(globalThis)) {
-  const target = new URL(url, globalThis.location?.href).href;
-  let html;
-  try {
-    const res = await f(target, { credentials: "same-origin" });
-    if (!res.ok) throw new Error(String(res.status));
-    html = await res.text();
-  } catch {
-    throw new DolphinError("network", `Cannot read ${target}. Use a page of this site, or one that allows CORS.`);
-  }
-  return snapshotFromDocument(new DOMParser().parseFromString(html, "text/html"), target);
-}
-
-// src/render/colors.ts
-var hex = (r, g, b) => "#" + [r, g, b].map((v) => Math.round(v).toString(16).padStart(2, "0")).join("");
-function hsl(r, g, b) {
-  r /= 255;
-  g /= 255;
-  b /= 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b), l = (max + min) / 2, d = max - min;
-  if (!d) return [0, 0, l];
-  const s2 = d / (1 - Math.abs(2 * l - 1));
-  const h = max === r ? (g - b) / d % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
-  return [(h * 60 + 360) % 360, s2, l];
-}
-function deepen(color) {
-  let [r, g, b] = [1, 3, 5].map((i) => Number.parseInt(color.slice(i, i + 2), 16));
-  for (let i = 0; i < 20 && contrast(hex(r, g, b), "#ffffff") < 7; i++) {
-    r *= 0.88;
-    g *= 0.88;
-    b *= 0.88;
-  }
-  return hex(r, g, b);
-}
-var DEFAULT_COLORS = { primary: "#0b3f2f", accent: "#f3811d" };
-function pickBrandColors(pixels, fallback = DEFAULT_COLORS) {
-  const buckets = /* @__PURE__ */ new Map();
-  for (let i = 0; i + 3 < pixels.length; i += 4) {
-    const [r, g, b, a] = [pixels[i], pixels[i + 1], pixels[i + 2], pixels[i + 3]];
-    if (a < 128) continue;
-    const key = `${r >> 4},${g >> 4},${b >> 4}`;
-    const e = buckets.get(key) ?? { n: 0, r: 0, g: 0, b: 0 };
-    e.n++;
-    e.r += r;
-    e.g += g;
-    e.b += b;
-    buckets.set(key, e);
-  }
-  const colors = [...buckets.values()].map((e) => {
-    const [r, g, b] = [e.r / e.n, e.g / e.n, e.b / e.n];
-    const [h, s2, l] = hsl(r, g, b);
-    return { n: e.n, hex: hex(r, g, b), h, s: s2, l };
-  }).filter((c) => c.l < 0.95 && c.l > 0.04);
-  if (!colors.length) return fallback;
-  const vivid = colors.filter((c) => c.s > 0.35).sort((a, b) => b.n * b.s - a.n * a.s);
-  const darkish = colors.filter((c) => luminance(c.hex) < 0.2 && c.s > 0.12).sort((a, b) => b.n - a.n);
-  let primary = darkish[0];
-  const distinct = (c) => !primary || c !== primary && (Math.min(Math.abs(c.h - primary.h), 360 - Math.abs(c.h - primary.h)) > 25 || luminance(c.hex) - luminance(primary.hex) > 0.3);
-  const accent = vivid.find((c) => luminance(c.hex) > 0.15 && distinct(c)) ?? vivid.find(distinct);
-  if (!primary) primary = vivid.find((c) => c !== accent) ?? accent;
-  if (!primary || !accent) return fallback;
-  if (primary === accent) return { primary: deepen(primary.hex), accent: fallback.accent };
-  return { primary: deepen(primary.hex), accent: accent.hex };
-}
-function colorsFromImage(img, fallback) {
-  const canvas = document.createElement("canvas");
-  canvas.width = 64;
-  canvas.height = 64;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  if (!ctx) return fallback ?? DEFAULT_COLORS;
-  ctx.drawImage(img, 0, 0, 64, 64);
-  try {
-    return pickBrandColors(ctx.getImageData(0, 0, 64, 64).data, fallback);
-  } catch {
-    return fallback ?? DEFAULT_COLORS;
-  }
-}
 
 // src/widget/i18n.ts
 var fr = {
@@ -2491,8 +2512,10 @@ function enableDirectMode() {
   });
 }
 export {
+  ANALYSIS_JSON_SCHEMA,
   CanvasPosterRenderer,
   ClaudeLlm,
+  DEFAULT_COLORS,
   DEFAULT_MODEL,
   DolphinError,
   DolphinStudio,
@@ -2510,10 +2533,13 @@ export {
   POSTS_JSON_SCHEMA,
   Vault,
   assertSchedulable,
+  buildAnalyzePrompt,
   buildSystemPrompt,
   buildUserPrompt,
+  colorsFromImage,
   contrast,
   defineDolphinElement,
+  discoverSite,
   drawPoster,
   enableDirectMode,
   estimateCostUsd,
@@ -2522,9 +2548,13 @@ export {
   isDolphinError,
   mount,
   paletteFor,
+  parseAnalysis,
   parseDrafts,
+  pickBrandColors,
   planSchedule,
+  snapshotFromDocument,
   validateBrand,
-  validateGenerateRequest
+  validateGenerateRequest,
+  validateSnapshot
 };
 //# sourceMappingURL=dolphin.esm.js.map
