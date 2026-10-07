@@ -1,4 +1,4 @@
-import type { BrandProfile, GenerateResult, PostDraft } from "../src/core/types.js";
+import type { AnalyzeResult, BrandProfile, GenerateResult, PostDraft, SiteSnapshot } from "../src/core/types.js";
 import type { LlmPort, PosterRenderer, PublishInput, PublisherPort } from "../src/ports/index.js";
 
 export const brand: BrandProfile = {
@@ -28,6 +28,15 @@ export class FakeLlm implements LlmPort {
   async generate(...args: Parameters<LlmPort["generate"]>): Promise<GenerateResult> {
     this.calls.push(args);
     return { drafts: Array.from({ length: Math.min(this.n, args[1].count) }, (_, i) => draft(i + 1)), usage: { inputTokens: 1000, outputTokens: 500 }, model: "claude-opus-5-5" };
+  }
+  analyzed: [SiteSnapshot, BrandProfile | undefined][] = [];
+  async analyze(snapshot: SiteSnapshot, b?: BrandProfile): Promise<AnalyzeResult> {
+    this.analyzed.push([snapshot, b]);
+    return {
+      brand: { name: "Le Fournil", language: "fr", products: [{ name: "Pain", status: "available" }], contact: { phone: "+225 01" } },
+      ideas: [{ title: "Le pain du matin", angle: "Montrer la fournée", why: "Attire les clients du matin" }],
+      usage: { inputTokens: 2000, outputTokens: 800 }, model: "claude-opus-5-5",
+    };
   }
 }
 

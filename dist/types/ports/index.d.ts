@@ -2,9 +2,11 @@
  * Ports: what the application needs from the outside world.
  * Adapters (Claude, Meta, HTTP proxy, storage…) implement them; the core never imports an adapter.
  */
-import type { BrandProfile, GenerateRequest, GenerateResult, Post } from "../core/types.js";
+import type { AnalyzeResult, BrandProfile, GenerateRequest, GenerateResult, Post, SiteSnapshot } from "../core/types.js";
 export interface LlmPort {
     generate(brand: BrandProfile, request: GenerateRequest): Promise<GenerateResult>;
+    /** Understands a website: proposes a brand profile (when none is given) and post ideas. */
+    analyze(snapshot: SiteSnapshot, brand?: BrandProfile): Promise<AnalyzeResult>;
 }
 export interface PublishInput {
     image: Blob;

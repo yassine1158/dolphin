@@ -69,4 +69,27 @@ describe("DolphinStudio", () => {
     await studio.clear();
     expect(calls).toBe(1);
   });
+
+  it("analyzes a site and keeps the ideas", async () => {
+    const { studio, llm, store } = make();
+    await studio.load();
+    const r = await studio.analyze({ url: "https://x.ci", headings: [], text: "", phones: [], whatsapp: [], emails: [], logoCandidates: [], structured: {} });
+    expect(r.brand.name).toBe("Le Fournil");
+    expect(llm.analyzed[0]![1]).toBeUndefined(); // no saved profile yet: the model proposes one
+    expect(studio.ideas[0]!.title).toBe("Le pain du matin");
+    await studio.setBrand({ ...brand, name: "Le Fournil", id: "ignored" });
+    expect(studio.brand.id).toBe("acme");
+    const again = new DolphinStudio({ brand, renderer: new FakeRenderer(), store, llm });
+    await again.load();
+    expect(again.brand.name).toBe("Le Fournil");
+    expect(again.ideas).toHaveLength(1);
+    await again.analyze({ url: "https://x.ci", headings: [], text: "", phones: [], whatsapp: [], emails: [], logoCandidates: [], structured: {} });
+    expect(llm.analyzed[1]![1]!.name).toBe("Le Fournil"); // saved profile is sent as the truth
+  });
+
+  it("never replaces a brand owned by the host", async () => {
+    const { studio } = make({ brandLocked: true });
+    await expect(studio.setBrand(brand)).rejects.toMatchObject({ code: "invalid_request" });
+  });
 });
+

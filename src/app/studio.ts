@@ -1,7 +1,8 @@
+import { validateBrand } from "../core/brand.js";
 import { DolphinError, isDolphinError } from "../core/errors.js";
 import { MAX_POSTS, fullCaption } from "../core/schema.js";
 import { assertSchedulable, planSchedule } from "../core/schedule.js";
-import type { BrandProfile, GenerateRequest, Post, PostDraft, Usage } from "../core/types.js";
+import type { AnalyzeResult, BrandProfile, GenerateRequest, Post, PostDraft, PostIdea, SiteSnapshot, Usage } from "../core/types.js";
 import type { KeyValueStore, LlmPort, PosterRenderer, PublisherPort } from "../ports/index.js";
 
 export interface StudioDeps {
@@ -12,6 +13,8 @@ export interface StudioDeps {
   publisher?: PublisherPort;
   now?: () => Date;
   newId?: () => string;
+  /** The host owns the brand (e.g. built from its CMS): the studio never replaces it. */
+  brandLocked?: boolean;
 }
 
 export interface GenerateOptions extends GenerateRequest {
@@ -42,9 +45,12 @@ export class DolphinStudio {
   private readonly now: () => Date;
   private readonly newId: () => string;
   private loaded = false;
+  private ideaList: PostIdea[] = [];
+  private readonly ns: string;
 
   constructor(private deps: StudioDeps) {
-    this.key = `posts:${deps.brand.id}`;
+    this.ns = deps.brand.id;
+    this.key = `posts:${this.ns}`;
     this.now = deps.now ?? (() => new Date());
     this.newId = deps.newId ?? (() => globalThis.crypto.randomUUID());
   }
@@ -64,12 +70,45 @@ export class DolphinStudio {
     return () => this.listeners.delete(fn);
   }
 
+  get brandLocked(): boolean { return !!this.deps.brandLocked; }
+  get ideas(): readonly PostIdea[] { return this.ideaList; }
+  /** True once the owner saved a profile (or the host provides one). */
+  hasSavedBrand = false;
+
   async load(): Promise<readonly Post[]> {
     if (!this.loaded) {
-      try { this.posts = JSON.parse((await this.deps.store.get(this.key)) ?? "[]") as Post[]; } catch { this.posts = []; }
+      const read = async <T>(k: string, d: T): Promise<T> => { try { return (JSON.parse((await this.deps.store.get(k)) ?? "null") as T) ?? d; } catch { return d; } };
+      this.posts = await read<Post[]>(this.key, []);
+      this.ideaList = await read<PostIdea[]>(`ideas:${this.ns}`, []);
+      if (this.brandLocked) this.hasSavedBrand = true;
+      else {
+        const saved = await read<unknown>(`brand:${this.ns}`, null);
+        if (saved) { try { this.deps = { ...this.deps, brand: validateBrand(saved) }; this.hasSavedBrand = true; } catch { /* ignore a broken profile */ } }
+      }
       this.loaded = true;
     }
     return this.list();
+  }
+
+  /** Saves the brand profile edited by the owner. */
+  async setBrand(brand: BrandProfile): Promise<BrandProfile> {
+    if (this.brandLocked) throw new DolphinError("invalid_request", "The brand is managed by the host site.");
+    const valid = validateBrand({ ...brand, id: this.ns });
+    this.deps = { ...this.deps, brand: valid };
+    this.hasSavedBrand = true;
+    await this.deps.store.set(`brand:${this.ns}`, JSON.stringify(valid));
+    this.emit();
+    return valid;
+  }
+
+  /** Reads the site through the model: a brand proposal (unless locked) and post ideas. */
+  async analyze(snapshot: SiteSnapshot): Promise<AnalyzeResult> {
+    if (!this.deps.llm) throw new DolphinError("not_configured", "No language model is connected.");
+    const result = await this.deps.llm.analyze(snapshot, this.brandLocked || this.hasSavedBrand ? this.brand : undefined);
+    this.ideaList = result.ideas;
+    await this.deps.store.set(`ideas:${this.ns}`, JSON.stringify(result.ideas));
+    this.emit();
+    return result;
   }
 
   list(): readonly Post[] { return this.posts; }
