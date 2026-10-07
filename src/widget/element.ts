@@ -25,6 +25,12 @@ export interface DolphinConfig {
   model?: string;
   fonts?: PosterFonts;
   graphVersion?: string;
+  /**
+   * Direct mode with keys managed by the host page (it already has its own login and storage):
+   * no passphrase screen. The host is told about new keys through `onSecretsChange`.
+   */
+  secrets?: StudioSecrets;
+  onSecretsChange?: (secrets: StudioSecrets) => void | Promise<void>;
 }
 
 export type DirectFactory = (secrets: StudioSecrets, config: DolphinConfig) => Pick<StudioDeps, "llm" | "publisher">;
@@ -93,6 +99,7 @@ export class DolphinStudioElement extends HTMLElement {
   }
 
   private get mode(): "proxy" | "direct" { return this.cfg!.mode ?? (this.cfg!.endpoint ? "proxy" : "direct"); }
+  private get hostManaged(): boolean { return this.mode === "direct" && !!this.cfg?.secrets; }
   private get model(): string { return this.cfg?.model ?? DEFAULT_MODEL; }
 
   private async init(): Promise<void> {
@@ -120,6 +127,10 @@ export class DolphinStudioElement extends HTMLElement {
       } catch { /* server unreachable: generation calls will report it */ }
       this.studio.connect({ llm: new HttpLlm(http), ...(publisher ? { publisher: new HttpPublisher(http) } : {}) });
       this.view = "main";
+    } else if (this.hostManaged) {
+      this.secrets = { ...cfg.secrets };
+      this.applySecrets();
+      this.view = "main";
     } else {
       this.vault = new Vault(this.store);
       this.view = (await this.vault.exists()) ? "lock" : "setup";
@@ -132,7 +143,7 @@ export class DolphinStudioElement extends HTMLElement {
   private render(): void {
     const t = this.t;
     const head = `<header>${MARK_SVG}<div><h2>DOLPH<b>in</b></h2><p>${esc(t.tagline)}</p></div><span class="badge">${esc(t.beta)}</span>
-      ${this.view === "main" && this.mode === "direct" ? `<button class="end" data-act="lock">${esc(t.lock)}</button>` : ""}</header>`;
+      ${this.view === "main" && this.mode === "direct" && !this.hostManaged ? `<button class="end" data-act="lock">${esc(t.lock)}</button>` : ""}</header>`;
     let body = "";
     if (this.view === "loading") body = "";
     else if (this.view === "setup" || this.view === "lock") body = this.lockView();
@@ -330,7 +341,8 @@ export class DolphinStudioElement extends HTMLElement {
     if (read("claudeKey")) next.claudeKey = read("claudeKey");
     if (read("metaToken")) next.metaToken = read("metaToken");
     next.metaPageId = read("metaPageId");
-    await this.vault!.seal(this.passphrase, next);
+    if (this.hostManaged) await this.cfg!.onSecretsChange?.(next);
+    else await this.vault!.seal(this.passphrase, next);
     this.secrets = next;
     this.applySecrets();
     this.render();

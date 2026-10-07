@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: DOLPHin API
-  version: 0.1.0
+  version: 0.2.0
   description: |
     Contract between the <dolphin-studio> widget (proxy mode) and a server that holds the keys.
     The reference implementation is `dolphin-server` (Node). Any backend (PHP, Python, Java, Go, .NET…)
