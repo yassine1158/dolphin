@@ -43,7 +43,7 @@ button[disabled]{opacity:.55;cursor:progress}
 .toast.error{background:var(--d-danger)}.toast.success{background:var(--d-ok)}
 .lock{max-width:420px;margin:10px auto}
 .post{display:grid;grid-template-columns:minmax(200px,300px) minmax(0,1fr);gap:18px;align-items:start}
-.post canvas{display:block;width:100%;height:auto;aspect-ratio:1080/1350;border-radius:12px;background:var(--d-line)}
+.post canvas{display:block;width:100%;height:auto;border-radius:12px;background:var(--d-line)}
 .post .head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px}
 .pill{font-size:.75rem;font-weight:700;border-radius:99px;padding:3px 10px;background:var(--d-line)}
 .pill.scheduled,.pill.published{background:color-mix(in srgb,var(--d-ok) 18%,#fff);color:var(--d-ok)}

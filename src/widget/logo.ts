@@ -57,3 +57,27 @@ export async function logoFromFile(file: File): Promise<{ logoUrl: string; color
     URL.revokeObjectURL(url);
   }
 }
+
+/**
+ * A background photo chosen by the designer: re-encoded as JPEG (at most 1600 px, under ~1.5 MB),
+ * which also strips the camera metadata (GPS position, device) from the file.
+ */
+export async function photoFromFile(file: File): Promise<string> {
+  if (!/^image\/(png|jpeg|webp)$/.test(file.type) || file.size > 25 * 1024 * 1024) throw new Error("type");
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await loadImage(url);
+    const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    for (const [side, q] of [[1600, 0.85], [1280, 0.8], [1024, 0.75]] as const) {
+      const k = Math.min(1, side / Math.max(w, h || 1));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(w * k)); canvas.height = Math.max(1, Math.round(h * k));
+      canvas.getContext("2d")!.drawImage(img, 0, 0, canvas.width, canvas.height);
+      const data = canvas.toDataURL("image/jpeg", q);
+      if (data.length <= 1_900_000) return data;
+    }
+    throw new Error("size");
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}

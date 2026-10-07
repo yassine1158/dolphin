@@ -8,10 +8,13 @@
  *   META_PAGE_ID            Facebook page id (optional: enables publishing)
  *   META_PAGE_TOKEN         page access token with pages_manage_posts
  *   META_GRAPH_VERSION      default v23.0
+ *   META_APP_SECRET         app secret: adds appsecret_proof to every Facebook call (recommended)
  *   DOLPHIN_API_TOKEN       bearer token the widget must send (recommended)
  *   DOLPHIN_ALLOWED_ORIGINS comma-separated origins allowed by CORS, e.g. https://www.example.com
  *   DOLPHIN_BRAND_FILE      JSON file with a fixed brand profile (optional)
  *   DOLPHIN_BASE_PATH       mount path, default ""
+ *   DOLPHIN_RATE_LIMIT      AI requests per IP and per minute, default 20 ("0" disables every limit)
+ *   DOLPHIN_TRUST_PROXY     "1" behind a reverse proxy you control: client IP from X-Forwarded-For
  *   PORT / HOST             default 8787 / 0.0.0.0
  */
 import { readFileSync } from "node:fs";
@@ -26,7 +29,11 @@ const list = (v?: string) => (v ?? "").split(",").map(s => s.trim()).filter(Bool
 
 const llm = env.ANTHROPIC_API_KEY ? new ClaudeLlm({ apiKey: env.ANTHROPIC_API_KEY, ...(env.DOLPHIN_MODEL ? { model: env.DOLPHIN_MODEL } : {}) }) : undefined;
 const publisher = env.META_PAGE_ID && env.META_PAGE_TOKEN
-  ? new MetaPagePublisher({ pageId: env.META_PAGE_ID, accessToken: env.META_PAGE_TOKEN, ...(env.META_GRAPH_VERSION ? { graphVersion: env.META_GRAPH_VERSION } : {}) })
+  ? new MetaPagePublisher({
+    pageId: env.META_PAGE_ID, accessToken: env.META_PAGE_TOKEN,
+    ...(env.META_GRAPH_VERSION ? { graphVersion: env.META_GRAPH_VERSION } : {}),
+    ...(env.META_APP_SECRET ? { appSecret: env.META_APP_SECRET } : {}),
+  })
   : undefined;
 const brand = env.DOLPHIN_BRAND_FILE ? validateBrand(JSON.parse(readFileSync(env.DOLPHIN_BRAND_FILE, "utf8"))) : undefined;
 
@@ -39,6 +46,8 @@ const handler = createDolphinHandler({
   ...(brand ? { brand } : {}),
   ...(env.DOLPHIN_API_TOKEN ? { apiToken: env.DOLPHIN_API_TOKEN } : {}),
   allowedOrigins: list(env.DOLPHIN_ALLOWED_ORIGINS),
+  rateLimit: env.DOLPHIN_RATE_LIMIT === "0" ? false : { expensive: Number(env.DOLPHIN_RATE_LIMIT) || 20 },
+  trustProxy: env.DOLPHIN_TRUST_PROXY === "1",
   basePath: env.DOLPHIN_BASE_PATH ?? "",
   log: line => console.log(`[dolphin] ${line}`),
 });

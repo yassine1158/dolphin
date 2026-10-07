@@ -1,4 +1,4 @@
-/*! DOLPHin 0.3.0 · (c) 2026 Yassine Chaabane · SPDX-License-Identifier: AGPL-3.0-only · Licence commerciale : COMMERCIAL-LICENSE.md · Logiciels tiers : THIRD-PARTY-NOTICES.md */
+/*! DOLPHin 0.4.0 · (c) 2026 Yassine Chaabane · SPDX-License-Identifier: AGPL-3.0-only · Licence commerciale : COMMERCIAL-LICENSE.md · Logiciels tiers : THIRD-PARTY-NOTICES.md */
 
 // src/core/errors.ts
 var DolphinError = class extends Error {
@@ -7,6 +7,8 @@ var DolphinError = class extends Error {
     this.code = code;
     this.status = status;
   }
+  code;
+  status;
   name = "DolphinError";
   toJSON() {
     return { code: this.code, message: this.message };
@@ -83,6 +85,79 @@ function parseDrafts(value) {
 }
 var fullCaption = (p) => [p.caption.trim(), p.hashtags.map((h) => "#" + cleanHashtag(h)).join(" ")].filter(Boolean).join("\n\n");
 
+// src/core/campaign.ts
+var OBJECTIVES = ["awareness", "engagement", "traffic", "leads", "sales", "event"];
+var OBJECTIVE_BRIEF = {
+  awareness: "make the brand known: memorable, easy to share, one clear message per post",
+  engagement: "start conversations: ask a question or invite a reaction in every post",
+  traffic: "bring people to the website: give a reason to click the link",
+  leads: "get people to write or call: invite them to send a message for information",
+  sales: "sell the available products: benefits, proof from the facts given, a clear call to order",
+  event: "promote the event or offer: what, when, where, and a reminder to come or book"
+};
+var slug = (s2) => s2.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
+function withUtm(link, p) {
+  const url = new URL(link);
+  if (url.protocol !== "https:" && url.protocol !== "http:") throw new Error("Only http(s) links can be tracked.");
+  const set = (k, v) => {
+    if (v) url.searchParams.set(k, slug(v) || v);
+  };
+  set("utm_source", p.source ?? "facebook");
+  set("utm_medium", p.medium ?? "social");
+  set("utm_campaign", p.campaign);
+  set("utm_content", p.content);
+  return url.href;
+}
+function captionWithLink(post) {
+  if (!post.link) return fullCaption(post);
+  let link = post.link;
+  try {
+    link = withUtm(post.link, { ...post.campaign ? { campaign: post.campaign } : {}, content: post.id.slice(0, 8) });
+  } catch {
+  }
+  return fullCaption({ caption: `${post.caption.trim()}
+
+\u{1F449} ${link}`, hashtags: post.hashtags });
+}
+var csvCell = (v) => {
+  let s2 = String(v ?? "");
+  if (/^[=+\-@\t\r]/.test(s2)) s2 = "'" + s2;
+  return /[",\n\r;]/.test(s2) ? `"${s2.replace(/"/g, '""')}"` : s2;
+};
+function planToCsv(posts) {
+  const head = ["date", "time", "status", "campaign", "title", "subtitle", "caption", "hashtags", "link", "format"];
+  const rows = [...posts].sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt)).map((p) => {
+    const d = new Date(p.scheduledAt);
+    const pad = (n) => String(n).padStart(2, "0");
+    return [
+      `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+      `${pad(d.getHours())}:${pad(d.getMinutes())}`,
+      p.status,
+      p.campaign ?? "",
+      p.title,
+      p.subtitle,
+      captionWithLink(p),
+      p.hashtags.map((h) => "#" + h).join(" "),
+      p.link ?? "",
+      p.design?.format ?? "portrait"
+    ];
+  });
+  return "\uFEFF" + [head, ...rows].map((r) => r.map(csvCell).join(",")).join("\r\n") + "\r\n";
+}
+function calendarWeeks(posts, from, weeks = 4) {
+  const start = new Date(from.getFullYear(), from.getMonth(), from.getDate());
+  start.setDate(start.getDate() - (start.getDay() + 6) % 7);
+  const key = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const days = Array.from({ length: weeks * 7 }, (_, i) => {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+    return { date: key(d), posts: [] };
+  });
+  const index = new Map(days.map((d) => [d.date, d]));
+  for (const p of posts) index.get(key(new Date(p.scheduledAt)))?.posts.push(p);
+  for (const d of days) d.posts.sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
+  return days;
+}
+
 // src/core/brand.ts
 var LANGS = ["fr", "en", "ar"];
 var HEX = /^#(?:[0-9a-f]{3}|[0-9a-f]{6})$/i;
@@ -106,7 +181,9 @@ var logo = (v, field) => {
     if (!/^data:image\/(png|jpeg|webp|svg\+xml)[;,]/.test(v)) fail(`${field} must be a PNG, JPEG, WebP or SVG image.`);
     return text(v, field, 1e6);
   }
-  return text(v, field, 500);
+  const url = text(v, field, 500);
+  if (url && /^[a-z][a-z0-9+.-]*:/i.test(url) && !/^https?:\/\//i.test(url)) fail(`${field} must be an http(s) or relative URL.`);
+  return url;
 };
 function validateBrand(input) {
   const b = obj(input, "brand");
@@ -169,10 +246,18 @@ function validateGenerateRequest(input) {
   const tone = text(r.tone, "request.tone", 100);
   const notes = text(r.notes, "request.notes", 1e3);
   const avoid = list(r.avoidTitles, "request.avoidTitles", 30, 160);
+  const audience = text(r.audience, "request.audience", 200);
+  const offer = text(r.offer, "request.offer", 500);
   if (subject) req.subject = subject;
   if (tone) req.tone = tone;
   if (notes) req.notes = notes;
   if (avoid) req.avoidTitles = avoid;
+  if (r.objective !== void 0) {
+    if (!OBJECTIVES.includes(r.objective)) fail(`request.objective must be one of ${OBJECTIVES.join(", ")}.`);
+    req.objective = r.objective;
+  }
+  if (audience) req.audience = audience;
+  if (offer) req.offer = offer;
   return req;
 }
 function validateSnapshot(input) {
@@ -364,6 +449,9 @@ ${hard.map((r) => "- " + r).join("\n")}`;
 }
 function buildUserPrompt(req) {
   const parts = [`Write ${req.count} post(s). They will be published one per day, in order.`];
+  if (req.objective) parts.push(`Campaign objective: ${OBJECTIVE_BRIEF[req.objective]}.`);
+  if (req.audience) parts.push(`Audience of this campaign: ${req.audience}.`);
+  if (req.offer) parts.push(`Offer or event, as written by the manager (use only these facts): ${req.offer}`);
   if (req.subject) parts.push(`Subject: ${req.subject}.`);
   if (req.tone) parts.push(`Tone: ${req.tone}.`);
   if (req.notes) parts.push(`Instruction from the manager: ${req.notes}`);
@@ -398,7 +486,7 @@ function toLocalInput(d) {
 var MIN_SAMPLES = 8;
 var DAYS = 7;
 var HOURS = 24;
-var weight = (s2) => s2.reactions + 2 * s2.comments + 3 * s2.shares;
+var weight = (s2) => Math.max(0, Number.isFinite(s2.score) ? s2.score : (s2.reactions || 0) + 2 * (s2.comments || 0) + 3 * (s2.shares || 0));
 var mondayFirst = (d) => (d.getDay() + 6) % 7;
 function defaultGrid() {
   const weekday = (h) => h >= 19 && h <= 21 ? 1 : h >= 12 && h <= 13 ? 0.8 : h === 18 || h === 22 ? 0.7 : h >= 7 && h <= 8 ? 0.5 : h >= 9 && h <= 17 ? 0.35 : 0.08;
@@ -415,10 +503,10 @@ function pickBest(grid) {
   }
   return best;
 }
-function analyzePeaks(samples, minSamples = MIN_SAMPLES) {
+function analyzePeaks(samples, minSamples = MIN_SAMPLES, from = "page") {
   const valid = samples.filter((s2) => !Number.isNaN(new Date(s2.createdTime).getTime()));
   let grid;
-  let source = "page";
+  let source = from;
   if (valid.length < minSamples) {
     grid = defaultGrid();
     source = "default";
@@ -453,6 +541,320 @@ function planWithPeaks(count, start, report, everyDays = 1) {
     d.setHours(report.bestHourByDay[mondayFirst(d)] ?? 19, 0, 0, 0);
     return d;
   });
+}
+
+// src/core/insights.ts
+var WEEK = 7 * 864e5;
+var round = (n, d = 1) => Math.round(n * 10 ** d) / 10 ** d;
+function analyzeInsights(samples, now = /* @__PURE__ */ new Date()) {
+  const valid = samples.map((s2) => ({ s: s2, t: new Date(s2.createdTime).getTime() })).filter((x) => Number.isFinite(x.t)).sort((a, b) => a.t - b.t);
+  const bucket = (n) => Array.from({ length: n }, () => ({ sum: 0, posts: 0 }));
+  const days = bucket(7), hours = bucket(24);
+  let total = 0;
+  for (const { s: s2 } of valid) {
+    const d = new Date(s2.createdTime), w = weight(s2);
+    days[mondayFirst(d)].sum += w;
+    days[mondayFirst(d)].posts++;
+    hours[d.getHours()].sum += w;
+    hours[d.getHours()].posts++;
+    total += w;
+  }
+  const out = (b) => b.map((x) => ({ avg: x.posts ? round(x.sum / x.posts) : 0, posts: x.posts }));
+  const byDay = out(days), byHour = out(hours);
+  const bestOf = (list2, min = 2) => {
+    let best;
+    list2.forEach((b, i) => {
+      if (b.posts >= min && (best === void 0 || b.avg > list2[best].avg)) best = i;
+    });
+    return best;
+  };
+  const blocks = Array.from({ length: 8 }, (_, i) => {
+    const hs = byHour.slice(i * 3, i * 3 + 3), posts = hs.reduce((a, h) => a + h.posts, 0);
+    return { avg: posts ? hs.reduce((a, h) => a + h.avg * h.posts, 0) / posts : 0, posts };
+  });
+  const bestBlock = bestOf(blocks);
+  const first = valid[0]?.t, last = valid[valid.length - 1]?.t;
+  const spanWeeks = first !== void 0 && last !== void 0 ? Math.max(1, (last - first) / WEEK) : 1;
+  const sumBetween = (a, b) => {
+    const xs = valid.filter((x) => x.t >= a && x.t < b);
+    return xs.length ? xs.reduce((n, x) => n + weight(x.s), 0) / xs.length : void 0;
+  };
+  const t = now.getTime();
+  const recent = sumBetween(t - 4 * WEEK, t + 1), before = sumBetween(t - 8 * WEEK, t - 4 * WEEK);
+  const trend = recent !== void 0 && before !== void 0 && before > 0 ? Math.round((recent - before) / before * 100) : void 0;
+  const testedDays = byDay.filter((d) => d.posts > 0).length;
+  const confidence = valid.length >= 40 && testedDays >= 6 ? "high" : valid.length >= 15 && testedDays >= 4 ? "medium" : "low";
+  const report = {
+    samples: valid.length,
+    byDay,
+    byHour,
+    avgPerPost: valid.length ? round(total / valid.length) : 0,
+    postsPerWeek: valid.length ? round(valid.length / spanWeeks) : 0,
+    top: [...valid].sort((a, b) => weight(b.s) - weight(a.s)).slice(0, 5).map(({ s: s2 }) => ({
+      createdTime: s2.createdTime,
+      score: round(weight(s2)),
+      ...s2.message ? { message: s2.message.slice(0, 140) } : {},
+      ...s2.url ? { url: s2.url } : {}
+    })),
+    confidence,
+    untestedDays: byDay.flatMap((d, i) => d.posts ? [] : [i])
+  };
+  const bestDay = bestOf(byDay);
+  if (bestDay !== void 0) report.bestDay = bestDay;
+  if (bestBlock !== void 0) report.bestBlock = bestBlock * 3;
+  if (first !== void 0) report.from = new Date(first).toISOString();
+  if (last !== void 0) report.to = new Date(last).toISOString();
+  if (trend !== void 0) report.trend = trend;
+  return report;
+}
+function mergeSources(...sources) {
+  return sources.flatMap((src) => {
+    const avg = src.length ? src.reduce((a, s2) => a + weight(s2), 0) / src.length : 0;
+    return src.map((s2) => ({ ...s2, score: avg > 0 ? weight(s2) / avg : 0 }));
+  });
+}
+
+// src/core/csv.ts
+var MAX_CSV_BYTES = 5 * 1024 * 1024;
+var MAX_ROWS = 2e4;
+function parseCsv(text2) {
+  const src = text2.replace(/^﻿/, "");
+  const firstLine = src.split(/\r?\n/, 1)[0] ?? "";
+  const sep = [",", ";", "	"].map((c) => ({ c, n: firstLine.split(c).length })).sort((a, b) => b.n - a.n)[0].c;
+  const rows = [];
+  let row = [], cell = "", quoted = false;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (quoted) {
+      if (ch === '"') {
+        if (src[i + 1] === '"') {
+          cell += '"';
+          i++;
+        } else quoted = false;
+      } else cell += ch;
+    } else if (ch === '"' && cell === "") quoted = true;
+    else if (ch === sep) {
+      row.push(cell);
+      cell = "";
+    } else if (ch === "\n" || ch === "\r") {
+      if (ch === "\r" && src[i + 1] === "\n") i++;
+      row.push(cell);
+      cell = "";
+      if (row.some((c) => c.trim())) rows.push(row);
+      row = [];
+      if (rows.length > MAX_ROWS) throw new DolphinError("invalid_request", `The file has more than ${MAX_ROWS} rows.`);
+    } else cell += ch;
+  }
+  row.push(cell);
+  if (row.some((c) => c.trim())) rows.push(row);
+  return rows;
+}
+var norm = (s2) => s2.normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+var find = (headers, patterns, not) => {
+  for (const p of patterns) {
+    const i = headers.findIndex((h) => p.test(h) && !not?.test(h));
+    if (i >= 0) return i;
+  }
+  return -1;
+};
+function toNumber(v) {
+  const s2 = (v ?? "").replace(/[\s %]/g, "");
+  if (!s2 || /^-+$/.test(s2)) return 0;
+  let t = s2;
+  if (/^\d{1,3}([.,]\d{3})+$/.test(t)) t = t.replace(/[.,]/g, "");
+  else if (/,\d{1,2}$/.test(t)) t = t.replace(/\./g, "").replace(",", ".");
+  else t = t.replace(/,/g, "");
+  const n = Number(t);
+  return Number.isFinite(n) ? n : 0;
+}
+function parseDateTime(v, dayFirst) {
+  const s2 = v.trim();
+  if (!s2) return null;
+  let m = s2.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[T\s](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (m) {
+    if (/[zZ]|[+-]\d{2}:?\d{2}$/.test(s2)) {
+      const d = new Date(s2.replace(/([+-]\d{2})(\d{2})$/, "$1:$2"));
+      return Number.isNaN(d.getTime()) ? null : d;
+    }
+    return new Date(+m[1], +m[2] - 1, +m[3], +(m[4] ?? 0), +(m[5] ?? 0));
+  }
+  m = s2.match(/^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})(?:[\s,T]+(\d{1,2}):(\d{2})(?::\d{2})?\s*([ap]\.?m\.?)?)?/i);
+  if (m) {
+    let [a, b] = [+m[1], +m[2]];
+    if (a > 12) dayFirst = true;
+    else if (b > 12) dayFirst = false;
+    const [day, month] = dayFirst ? [a, b] : [b, a];
+    const year = m[3].length === 2 ? 2e3 + +m[3] : +m[3];
+    let h = +(m[4] ?? 0);
+    const pm = m[6]?.toLowerCase().startsWith("p");
+    if (m[6]) h = h % 12 + (pm ? 12 : 0);
+    const d = new Date(year, month - 1, day, h, +(m[5] ?? 0));
+    return d.getMonth() === month - 1 ? d : null;
+  }
+  return null;
+}
+var TIME_OF_DAY = [/time of day/, /heure de la journee/, /tranche horaire/, /^hour/, /^heure$/];
+var DATE_TIME = [/publish time/, /heure de publication/, /date de publication/, /created/, /date.*heure/, /date.?time/, /^date$/, /^day$/, /^jour$/, /^time$/, /^date/, /^reporting starts/, /^debut des rapports/];
+var DAY = [/^day$/, /^jour$/, /^date$/, /^reporting starts/, /^debut des rapports/];
+function importEngagementCsv(text2) {
+  if (text2.length > MAX_CSV_BYTES) throw new DolphinError("invalid_request", "The file is larger than 5 MB.");
+  const rows = parseCsv(text2);
+  const headerAt = rows.findIndex((r) => r.filter((c) => c.trim()).length >= 3);
+  if (headerAt < 0) throw new DolphinError("invalid_request", "The file has no header line.");
+  const raw = rows[headerAt];
+  const headers = raw.map(norm);
+  const body = rows.slice(headerAt + 1);
+  const french = headers.some((h) => /heure|publication|^jour$|partages|commentaires|resultats|clics|couverture/.test(h));
+  const hourCol = find(headers, TIME_OF_DAY);
+  const kind = hourCol >= 0 ? "ads" : "posts";
+  const timeCol = kind === "ads" ? find(headers, DAY) : find(headers, DATE_TIME);
+  if (kind === "posts" && timeCol < 0) throw new DolphinError("invalid_request", "No date or publish time column was found.");
+  const col = (patterns, not) => find(headers, patterns, not);
+  const reactions = col([/^reactions$/, /reactions/, /j.?aime/, /likes/], /comment|partage|share/);
+  const comments = col([/^comments$/, /^commentaires$/, /comment/], /reaction|share|partage/);
+  const shares = col([/^shares$/, /^partages$/, /share/, /partage/], /reaction|comment/);
+  const combined = col([/reactions, comments and shares/, /reactions, commentaires et partages/, /engagement/, /interactions/]);
+  const results = col([/^results$/, /^resultats$/, /link clicks/, /clics sur (un|le) lien/, /^clicks/, /^clics/, /conversions/, /purchases/, /achats/, /^reach$/, /^couverture$/, /impressions/]);
+  const message = col([/^title$/, /^titre$/, /^description$/, /message/, /^post$/, /^publication$/]);
+  const permalink = col([/permalink/, /^lien$/, /^link$/, /url/]);
+  const metrics = kind === "ads" ? [results] : reactions >= 0 || comments >= 0 || shares >= 0 ? [reactions, comments, shares] : [combined >= 0 ? combined : results];
+  if (!metrics.some((i) => i >= 0)) throw new DolphinError("invalid_request", "No engagement column (reactions, comments, shares, results, clicks) was found.");
+  const samples = [];
+  let skipped = 0, undated = false;
+  for (const r of body) {
+    let when;
+    if (kind === "ads") {
+      const h = (r[hourCol] ?? "").match(/(\d{1,2})[:h]/);
+      if (!h) {
+        skipped++;
+        continue;
+      }
+      const day = timeCol >= 0 ? parseDateTime(r[timeCol] ?? "", french) : null;
+      if (timeCol >= 0 && !day) {
+        skipped++;
+        continue;
+      }
+      const score = toNumber(r[results]);
+      if (!day) {
+        undated = true;
+        for (let d = 0; d < 7; d++) samples.push({ createdTime: new Date(2024, 0, 1 + d, +h[1]).toISOString(), reactions: 0, comments: 0, shares: 0, score });
+        continue;
+      }
+      when = new Date(day.getFullYear(), day.getMonth(), day.getDate(), +h[1]);
+      samples.push({ createdTime: when.toISOString(), reactions: 0, comments: 0, shares: 0, score });
+      continue;
+    }
+    when = parseDateTime(r[timeCol] ?? "", french);
+    if (!when) {
+      skipped++;
+      continue;
+    }
+    const s2 = {
+      createdTime: when.toISOString(),
+      reactions: reactions >= 0 ? toNumber(r[reactions]) : 0,
+      comments: comments >= 0 ? toNumber(r[comments]) : 0,
+      shares: shares >= 0 ? toNumber(r[shares]) : 0
+    };
+    if (reactions < 0 && comments < 0 && shares < 0) s2.score = toNumber(r[metrics[0]]);
+    const msg = message >= 0 ? (r[message] ?? "").trim() : "";
+    if (msg) s2.message = msg.slice(0, 200);
+    const link = permalink >= 0 ? (r[permalink] ?? "").trim() : "";
+    if (/^https:\/\//.test(link)) s2.url = link.slice(0, 500);
+    samples.push(s2);
+  }
+  if (!samples.length) throw new DolphinError("invalid_request", "No row could be read: check the date column.");
+  return {
+    kind,
+    samples,
+    skipped,
+    columns: { time: raw[kind === "ads" ? hourCol : timeCol] ?? "", metrics: metrics.filter((i) => i >= 0).map((i) => raw[i]) },
+    ...undated ? { undated } : {}
+  };
+}
+
+// src/core/design.ts
+var POSTER_SIZES = {
+  portrait: { width: 1080, height: 1350 },
+  square: { width: 1080, height: 1080 },
+  story: { width: 1080, height: 1920 }
+};
+var FORMATS = Object.keys(POSTER_SIZES);
+var LAYOUTS = ["classic", "centered", "minimal"];
+var THEMES2 = ["dark", "light", "accent"];
+var STYLES2 = ["checks", "steps"];
+var STATUSES = ["draft", "scheduled", "published", "failed"];
+var MAX_PHOTO_CHARS = 2e6;
+var PHOTO = /^data:image\/(jpeg|png|webp);base64,[a-z0-9+/=]+$/i;
+var sizeOf = (design) => POSTER_SIZES[design?.format ?? "portrait"] ?? POSTER_SIZES.portrait;
+function sanitizeDesign(input) {
+  if (input === void 0 || input === null) return {};
+  if (typeof input !== "object" || Array.isArray(input)) throw new DolphinError("invalid_request", "design must be an object.");
+  const d = input;
+  const out = {};
+  if (d.format !== void 0) {
+    if (!FORMATS.includes(d.format)) throw new DolphinError("invalid_request", `design.format must be one of ${FORMATS.join(", ")}.`);
+    out.format = d.format;
+  }
+  if (d.layout !== void 0) {
+    if (!LAYOUTS.includes(d.layout)) throw new DolphinError("invalid_request", `design.layout must be one of ${LAYOUTS.join(", ")}.`);
+    out.layout = d.layout;
+  }
+  if (d.photo !== void 0 && d.photo !== "") {
+    if (typeof d.photo !== "string" || d.photo.length > MAX_PHOTO_CHARS || !PHOTO.test(d.photo)) {
+      throw new DolphinError("invalid_request", "design.photo must be a JPEG, PNG or WebP image of at most 1.5 MB.");
+    }
+    out.photo = d.photo;
+  }
+  if (d.overlay !== void 0) {
+    const o = Number(d.overlay);
+    if (!Number.isFinite(o)) throw new DolphinError("invalid_request", "design.overlay must be a number.");
+    out.overlay = Math.min(0.9, Math.max(0, o));
+  }
+  if (d.hideLogo !== void 0) out.hideLogo = d.hideLogo === true;
+  return out;
+}
+var str2 = (v, max) => typeof v === "string" ? v.slice(0, max) : "";
+var isDate = (v) => typeof v === "string" && !Number.isNaN(new Date(v).getTime());
+function safeLink(v) {
+  if (typeof v !== "string" || !v.trim()) return void 0;
+  try {
+    const u = new URL(v.trim());
+    return u.protocol === "https:" || u.protocol === "http:" ? u.href.slice(0, 1e3) : void 0;
+  } catch {
+    return void 0;
+  }
+}
+function sanitizePost(input) {
+  if (!input || typeof input !== "object") return null;
+  const p = input;
+  if (typeof p.id !== "string" || !p.id || p.id.length > 100) return null;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const post = {
+    id: p.id,
+    createdAt: isDate(p.createdAt) ? p.createdAt : now,
+    scheduledAt: isDate(p.scheduledAt) ? p.scheduledAt : now,
+    status: STATUSES.includes(p.status) ? p.status : "draft",
+    tag: str2(p.tag, 40),
+    title: str2(p.title, 120),
+    subtitle: str2(p.subtitle, 160),
+    points: Array.isArray(p.points) ? p.points.filter((x) => typeof x === "string").map((x) => x.slice(0, 120)).slice(0, MAX_POINTS) : [],
+    style: STYLES2.includes(p.style) ? p.style : "checks",
+    theme: THEMES2.includes(p.theme) ? p.theme : "dark",
+    caption: str2(p.caption, 2200),
+    hashtags: Array.isArray(p.hashtags) ? p.hashtags.filter((x) => typeof x === "string").map(cleanHashtag).filter(Boolean).slice(0, 10) : []
+  };
+  if (typeof p.externalId === "string") post.externalId = p.externalId.slice(0, 200);
+  if (typeof p.error === "string") post.error = p.error.slice(0, 500);
+  if (typeof p.errorCode === "string") post.errorCode = p.errorCode;
+  if (typeof p.campaign === "string" && p.campaign.trim()) post.campaign = p.campaign.trim().slice(0, 80);
+  const link = safeLink(p.link);
+  if (link) post.link = link;
+  try {
+    const design = sanitizeDesign(p.design);
+    if (Object.keys(design).length) post.design = design;
+  } catch {
+  }
+  return post;
 }
 
 // src/core/cost.ts
@@ -558,6 +960,7 @@ var HttpLlm = class {
   constructor(opts) {
     this.opts = opts;
   }
+  opts;
   async generate(brand, request) {
     const r = await call(this.opts, "POST", "/v1/generate", { brand, request });
     return { drafts: parseDrafts({ posts: r.drafts }), usage: r.usage, model: r.model };
@@ -577,6 +980,7 @@ var HttpPublisher = class {
   constructor(opts) {
     this.opts = opts;
   }
+  opts;
   async publish(input) {
     return call(this.opts, "POST", "/v1/publish", {
       imageBase64: await blobToBase64(input.image),
@@ -593,16 +997,23 @@ var HttpPublisher = class {
 };
 
 // src/adapters/publish/meta.ts
+async function appSecretProof(token, secret) {
+  const enc2 = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", enc2.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, enc2.encode(token)));
+  return Array.from(sig, (b) => b.toString(16).padStart(2, "0")).join("");
+}
 var MetaPagePublisher = class {
   constructor(opts) {
     this.opts = opts;
     if (!opts.pageId || !opts.accessToken) throw new DolphinError("not_configured", "Facebook page id and access token are required.");
     this.base = `https://graph.facebook.com/${opts.graphVersion ?? "v23.0"}/${encodeURIComponent(opts.pageId)}`;
   }
+  opts;
   base;
   async publish({ image, caption, scheduledAt }) {
     const form = new FormData();
-    form.append("source", image, "dolphin.png");
+    form.append("source", image, image.type === "image/jpeg" ? "dolphin.jpg" : "dolphin.png");
     form.append("message", caption);
     form.append("access_token", this.opts.accessToken);
     if (scheduledAt) {
@@ -615,27 +1026,49 @@ var MetaPagePublisher = class {
     return { id: data.post_id ?? data.id ?? "" };
   }
   async verify() {
-    const url = `${this.base}?fields=name&access_token=${encodeURIComponent(this.opts.accessToken)}`;
-    const data = await this.request(url, { method: "GET" });
+    const data = await this.request(`${this.base}?fields=name`, { method: "GET" });
     return { name: data.name ?? "" };
   }
-  /** Last 100 published posts with their reactions, comments and shares (needs pages_read_engagement). */
-  async history() {
-    const fields = "created_time,shares,reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0)";
-    const url = `${this.base}/published_posts?fields=${encodeURIComponent(fields)}&limit=100&access_token=${encodeURIComponent(this.opts.accessToken)}`;
-    const data = await this.request(url, { method: "GET" });
-    return (data.data ?? []).filter((r) => r.created_time).map((r) => ({
+  /**
+   * Published posts with their reactions, comments and shares (needs pages_read_engagement):
+   * up to `max` posts (default 300), following Facebook's pages of 100.
+   */
+  async history(max = 300) {
+    const fields = "created_time,message,permalink_url,shares,reactions.summary(total_count).limit(0),comments.summary(total_count).limit(0)";
+    const rows = [];
+    let url = `${this.base}/published_posts?fields=${encodeURIComponent(fields)}&limit=100`;
+    while (url && rows.length < max) {
+      const data = await this.request(url, { method: "GET" });
+      rows.push(...data.data ?? []);
+      const next = data.paging?.next;
+      url = next && new URL(next).host === "graph.facebook.com" ? stripToken(next) : void 0;
+    }
+    return rows.slice(0, max).filter((r) => r.created_time).map((r) => ({
       createdTime: r.created_time,
       reactions: r.reactions?.summary?.total_count ?? 0,
       comments: r.comments?.summary?.total_count ?? 0,
-      shares: r.shares?.count ?? 0
+      shares: r.shares?.count ?? 0,
+      ...r.message ? { message: r.message.slice(0, 200) } : {},
+      ...r.permalink_url?.startsWith("https://") ? { url: r.permalink_url } : {}
     }));
   }
+  /**
+   * POST sends the token in the form body; GET puts it in the query, as Facebook's CORS rules
+   * require in a browser. URLs with a token are never logged nor put in an error message.
+   */
   async request(url, init) {
     const f = this.opts.fetch ?? globalThis.fetch.bind(globalThis);
+    const u = new URL(url);
+    const proof = this.opts.appSecret ? await appSecretProof(this.opts.accessToken, this.opts.appSecret) : "";
+    if (init.body instanceof FormData) {
+      if (proof) init.body.set("appsecret_proof", proof);
+    } else {
+      u.searchParams.set("access_token", this.opts.accessToken);
+      if (proof) u.searchParams.set("appsecret_proof", proof);
+    }
     let res;
     try {
-      res = await f(url, init);
+      res = await f(u.href, init);
     } catch {
       throw new DolphinError("network", "Cannot reach Facebook.");
     }
@@ -663,6 +1096,12 @@ function graphError(e, status) {
       return new DolphinError("unknown", msg, status);
   }
 }
+function stripToken(link) {
+  const u = new URL(link);
+  u.searchParams.delete("access_token");
+  u.searchParams.delete("appsecret_proof");
+  return u.href;
+}
 
 // src/adapters/storage/index.ts
 var MemoryStore = class {
@@ -681,6 +1120,7 @@ var LocalStore = class {
   constructor(prefix = "dolphin:") {
     this.prefix = prefix;
   }
+  prefix;
   fallback = new MemoryStore();
   ls() {
     try {
@@ -714,16 +1154,17 @@ var LocalStore = class {
 };
 
 // src/adapters/secrets/vault.ts
-var ITERATIONS = 31e4;
+var ITERATIONS = 6e5;
+var LEGACY_ITERATIONS = 31e4;
 var KEY = "vault";
 var enc = new TextEncoder();
 var dec = new TextDecoder();
 var b64 = (u8) => btoa(String.fromCharCode(...u8));
 var unb64 = (s2) => Uint8Array.from(atob(s2), (c) => c.charCodeAt(0));
-async function deriveKey(passphrase, salt) {
+async function deriveKey(passphrase, salt, iterations) {
   const base = await crypto.subtle.importKey("raw", enc.encode(passphrase), "PBKDF2", false, ["deriveKey"]);
   return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations: ITERATIONS, hash: "SHA-256" },
+    { name: "PBKDF2", salt, iterations, hash: "SHA-256" },
     base,
     { name: "AES-GCM", length: 256 },
     false,
@@ -731,8 +1172,17 @@ async function deriveKey(passphrase, salt) {
   );
 }
 var Vault = class {
-  constructor(store) {
+  constructor(store, now = Date.now) {
     this.store = store;
+    this.now = now;
+  }
+  store;
+  now;
+  failures = 0;
+  lockedUntil = 0;
+  /** Milliseconds to wait before the next try, after 3 wrong passphrases in a row (2 s, 4 s… up to 60 s). */
+  get retryInMs() {
+    return Math.max(0, this.lockedUntil - this.now());
   }
   async exists() {
     return await this.store.get(KEY) != null;
@@ -741,21 +1191,31 @@ var Vault = class {
     if (passphrase.length < 8) throw new DolphinError("invalid_request", "The passphrase needs at least 8 characters.");
     const salt = crypto.getRandomValues(new Uint8Array(16));
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    const key = await deriveKey(passphrase, salt);
+    const key = await deriveKey(passphrase, salt, ITERATIONS);
     const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(JSON.stringify(secrets))));
-    await this.store.set(KEY, JSON.stringify({ v: 1, salt: b64(salt), iv: b64(iv), ct: b64(ct) }));
+    await this.store.set(KEY, JSON.stringify({ v: 2, i: ITERATIONS, salt: b64(salt), iv: b64(iv), ct: b64(ct) }));
   }
   async open(passphrase) {
     const raw = await this.store.get(KEY);
     if (!raw) throw new DolphinError("not_configured", "No vault on this device.");
+    if (this.retryInMs > 0) throw new DolphinError("rate_limit", "Too many wrong passphrases: wait a moment.");
+    let secrets;
+    let iterations = LEGACY_ITERATIONS;
     try {
       const v = JSON.parse(raw);
-      const key = await deriveKey(passphrase, unb64(v.salt));
+      iterations = Number.isInteger(v.i) && v.i >= 1e5 && v.i <= 5e6 ? v.i : LEGACY_ITERATIONS;
+      const key = await deriveKey(passphrase, unb64(v.salt), iterations);
       const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: unb64(v.iv) }, key, unb64(v.ct));
-      return JSON.parse(dec.decode(pt));
+      secrets = JSON.parse(dec.decode(pt));
     } catch {
+      this.failures++;
+      if (this.failures >= 3) this.lockedUntil = this.now() + Math.min(6e4, 1e3 * 2 ** (this.failures - 2));
       throw new DolphinError("auth", "Wrong passphrase.");
     }
+    this.failures = 0;
+    this.lockedUntil = 0;
+    if (iterations < ITERATIONS) await this.seal(passphrase, secrets).catch(() => void 0);
+    return secrets;
   }
   async reset() {
     await this.store.delete(KEY);
@@ -794,7 +1254,7 @@ function businessNodes(doc) {
   });
   return out;
 }
-var str2 = (v) => {
+var str3 = (v) => {
   if (typeof v === "string") return v;
   if (v && typeof v === "object") {
     const o = v;
@@ -809,15 +1269,15 @@ function snapshotFromDocument(doc, url) {
   const structured = {};
   for (const n of nodes) {
     for (const k of ["name", "legalName", "description", "telephone", "email", "address", "logo", "url"]) {
-      const v = clean(str2(n[k]));
+      const v = clean(str3(n[k]));
       if (v && !structured[k]) structured[k] = v.slice(0, 300);
     }
   }
   const logos = [];
   if (structured.logo) logos.push(abs(structured.logo, url));
-  doc.querySelectorAll("header img, nav img, [class*=logo] img, img[class*=logo], img[id*=logo], img[alt*=logo i], img[src*=logo]").forEach((img) => {
-    logos.push(abs(img.getAttribute("src"), url));
-  });
+  const LOGO_IMG = "header img, nav img, [class*=logo] img, img[class*=logo], img[id*=logo], img[src*=logo]";
+  const imgs = [...doc.querySelectorAll(`${LOGO_IMG}, img[alt]`)].filter((img) => /logo/i.test(img.alt) || img.matches(LOGO_IMG));
+  imgs.forEach((img) => logos.push(abs(img.getAttribute("src"), url)));
   logos.push(abs(meta('meta[property="og:logo"]'), url));
   const icons = [...doc.querySelectorAll('link[rel~="apple-touch-icon"], link[rel~="icon"]')].map((l) => ({ href: abs(l.getAttribute("href"), url), size: Number.parseInt(l.getAttribute("sizes") ?? "", 10) || (/\.svg(\?|$)/i.test(l.getAttribute("href") ?? "") ? 512 : 32) })).sort((a, b) => b.size - a.size);
   icons.forEach((i) => logos.push(i.href));
@@ -951,7 +1411,7 @@ var DEFAULT_FONTS = {
   display: '"Outfit", "Segoe UI", system-ui, sans-serif',
   body: '"Source Sans 3", "Segoe UI", system-ui, sans-serif'
 };
-var sizeOf = (img) => {
+var sizeOf2 = (img) => {
   const i = img;
   const w = i.naturalWidth || (typeof i.width === "number" ? i.width : 0);
   const h = i.naturalHeight || (typeof i.height === "number" ? i.height : 0);
@@ -972,30 +1432,57 @@ function wrapText(ctx, text2, maxWidth) {
   }
   return lines;
 }
+function photoPalette(T) {
+  return { ...T, fg: "#ffffff", tagBg: "rgba(0,0,0,.35)", tagFg: "#ffffff", tagLine: "rgba(255,255,255,.55)", logo: "plate" };
+}
+function cover(ctx, img, W, H) {
+  const [iw, ih] = sizeOf2(img);
+  const k = Math.max(W / iw, H / ih), w = iw * k, h = ih * k;
+  ctx.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+}
 function drawPoster(ctx, post, brand, assets = {}) {
-  const W = POSTER_WIDTH, H = POSTER_HEIGHT, M = 80, BAR = 170, MAXW = W - 2 * M;
+  const { width: W, height: H } = sizeOf(post.design);
+  const M = 80, BAR2 = 170, MAXW = W - 2 * M;
+  const layout = post.design?.layout ?? "classic";
+  const centered = layout === "centered";
   const F = assets.fonts ?? DEFAULT_FONTS;
-  const T = paletteFor(brand.colors, post.theme);
+  const photo = assets.photo ?? null;
+  const base = paletteFor(brand.colors, post.theme);
+  const T = photo ? photoPalette(base) : base;
   const rtl = brand.language === "ar";
   const x = (v, w = 0) => rtl ? W - v - w : v;
-  const start = rtl ? "right" : "left";
+  const start = centered ? "center" : rtl ? "right" : "left";
   const end = rtl ? "left" : "right";
+  const tx0 = centered ? W / 2 : x(M);
   ctx.direction = rtl ? "rtl" : "ltr";
   ctx.fillStyle = T.bg;
   ctx.fillRect(0, 0, W, H);
-  const glow = (gx, gy, r, color) => {
-    const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, r);
-    g.addColorStop(0, color);
-    g.addColorStop(1, "rgba(0,0,0,0)");
+  if (photo) {
+    cover(ctx, photo, W, H);
+    const k = post.design?.overlay ?? 0.55;
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, `rgba(0,0,0,${Math.min(0.95, k * 0.75)})`);
+    g.addColorStop(0.45, `rgba(0,0,0,${k})`);
+    g.addColorStop(1, `rgba(0,0,0,${Math.min(0.95, k + 0.2)})`);
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
-  };
-  glow(x(W * 0.92), H * 0.08, 640, T.glow[0]);
-  glow(x(0), H, 560, T.glow[1]);
+    ctx.fillStyle = rgba(brand.colors.primary, 0.25);
+    ctx.fillRect(0, 0, W, H);
+  } else {
+    const glow = (gx, gy, r, color) => {
+      const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, r);
+      g.addColorStop(0, color);
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    };
+    glow(x(W * 0.92), H * 0.08, 640, T.glow[0]);
+    glow(x(0), H, 560, T.glow[1]);
+  }
   const lh = 118;
   let lw = 0;
-  if (assets.logo) {
-    const [iw, ih] = sizeOf(assets.logo);
+  if (assets.logo && !post.design?.hideLogo) {
+    const [iw, ih] = sizeOf2(assets.logo);
     lw = Math.min(lh * iw / ih, 420);
     if (T.logo === "plate" || assets.logoPlate) {
       ctx.fillStyle = "#ffffff";
@@ -1024,43 +1511,54 @@ function drawPoster(ctx, post, brand, assets = {}) {
     ctx.textBaseline = "middle";
     ctx.fillText(label, tx + tw / 2, ty + 31, tw - 40);
   }
-  const points = post.points.filter(Boolean).slice(0, 6);
-  const top = 290, bottom = H - BAR - 50;
+  const points = layout === "minimal" ? [] : post.points.filter(Boolean).slice(0, 6);
+  const big = layout === "minimal" ? 1.3 : 1;
+  const top = H >= 1800 ? 380 : H <= 1100 ? 250 : 290, bottom = H - BAR2 - (H >= 1800 ? 120 : 50);
   let L;
-  for (let s3 = 1; s3 >= 0.6; s3 -= 0.04) {
+  for (let s3 = big; s3 >= 0.5; s3 -= 0.04) {
     ctx.font = `800 ${88 * s3}px ${F.display}`;
     const title2 = wrapText(ctx, post.title, MAXW);
-    ctx.font = `700 ${50 * s3}px ${F.display}`;
+    ctx.font = `700 ${50 * Math.min(s3, 1)}px ${F.display}`;
     const sub2 = wrapText(ctx, post.subtitle, MAXW);
     ctx.font = `700 ${40 * s3}px ${F.body}`;
     const pts2 = points.map((t) => wrapText(ctx, t, MAXW - 96 * s3));
     const rows2 = pts2.map((l) => Math.max(68 * s3, l.length * 48 * s3));
-    const h2 = title2.length * 94 * s3 + (sub2.length ? 20 * s3 + sub2.length * 60 * s3 : 0) + (rows2.length ? 48 * s3 + rows2.reduce((a, r) => a + r + 26 * s3, 0) - 26 * s3 : 0);
+    const h2 = title2.length * 94 * s3 + (sub2.length ? 20 * s3 + sub2.length * 60 * Math.min(s3, 1) : 0) + (rows2.length ? 48 * s3 + rows2.reduce((a, r) => a + r + 26 * s3, 0) - 26 * s3 : 0);
     L = { s: s3, title: title2, sub: sub2, pts: pts2, rows: rows2, h: h2 };
     if (top + h2 <= bottom) break;
   }
   const { s: s2, title, sub, pts, rows, h } = L;
-  let y = top + Math.max(0, (bottom - top - h) * 0.4);
+  let y = top + Math.max(0, (bottom - top - h) * (centered || layout === "minimal" ? 0.5 : 0.4));
   ctx.textAlign = start;
   ctx.textBaseline = "top";
+  if (photo) {
+    ctx.shadowColor = "rgba(0,0,0,.45)";
+    ctx.shadowBlur = 18;
+  }
   ctx.fillStyle = T.fg;
   ctx.font = `800 ${88 * s2}px ${F.display}`;
   for (const l of title) {
-    ctx.fillText(l, x(M), y);
+    ctx.fillText(l, tx0, y);
     y += 94 * s2;
   }
   if (sub.length) {
     y += 20 * s2;
     ctx.fillStyle = T.accent;
-    ctx.font = `700 ${50 * s2}px ${F.display}`;
+    ctx.font = `700 ${50 * Math.min(s2, 1)}px ${F.display}`;
     for (const l of sub) {
-      ctx.fillText(l, x(M), y);
-      y += 60 * s2;
+      ctx.fillText(l, tx0, y);
+      y += 60 * Math.min(s2, 1);
     }
   }
+  ctx.shadowColor = "transparent";
+  ctx.shadowBlur = 0;
   if (rows.length) y += 48 * s2;
+  ctx.font = `700 ${40 * s2}px ${F.body}`;
+  const blockW = Math.max(0, ...pts.flat().map((l) => ctx.measureText(l).width)) + 96 * s2;
+  const blockStart = centered ? Math.max(M, (W - blockW) / 2) : M;
   pts.forEach((lines, i) => {
-    const r = 34 * s2, rowH = rows[i], cy = y + rowH / 2, cx = x(M + r);
+    const r = 34 * s2, rowH = rows[i], cy = y + rowH / 2;
+    const cx = x(blockStart + r);
     ctx.fillStyle = T.markBg;
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -1082,15 +1580,15 @@ function drawPoster(ctx, post, brand, assets = {}) {
       ctx.lineTo(cx + 15 * s2, cy - 10 * s2);
       ctx.stroke();
     }
-    ctx.textAlign = start;
+    ctx.textAlign = rtl ? "right" : "left";
     ctx.fillStyle = T.fg;
     ctx.font = `700 ${40 * s2}px ${F.body}`;
-    lines.forEach((l, j) => ctx.fillText(l, x(M + 96 * s2), cy + (j - (lines.length - 1) / 2) * 48 * s2));
+    lines.forEach((l, j) => ctx.fillText(l, x(blockStart + 96 * s2), cy + (j - (lines.length - 1) / 2) * 48 * s2));
     y += rowH + 26 * s2;
   });
-  const by = H - BAR, cyb = by + BAR / 2;
+  const by = H - BAR2, cyb = by + BAR2 / 2;
   ctx.fillStyle = T.bar;
-  ctx.fillRect(0, by, W, BAR);
+  ctx.fillRect(0, by, W, BAR2);
   const contact = brand.contact.whatsapp ?? brand.contact.phone ?? brand.contact.website ?? "";
   const icx = x(M + 38);
   ctx.fillStyle = brand.contact.whatsapp ? "#25d366" : "rgba(255,255,255,.18)";
@@ -1118,7 +1616,7 @@ function drawPoster(ctx, post, brand, assets = {}) {
     ctx.fillText(l1, x(W - M), cyb - 6, 380);
     ctx.fillText(l2, x(W - M), cyb + 32, 380);
   } else if (l1) ctx.fillText(l1, x(W - M), cyb + 12, 380);
-  ctx.textAlign = start;
+  ctx.textAlign = rtl ? "right" : "left";
   if (assets.contactLabel) {
     ctx.globalAlpha = 0.85;
     ctx.font = `700 24px ${F.body}`;
@@ -1136,11 +1634,12 @@ function drawPoster(ctx, post, brand, assets = {}) {
   ctx.direction = rtl ? "rtl" : "ltr";
 }
 var CanvasPosterRenderer = class {
-  constructor(options = {}) {
-    this.options = options;
+  constructor(options2 = {}) {
+    this.options = options2;
   }
+  options;
   images = /* @__PURE__ */ new Map();
-  loadImage(url) {
+  loadImage(url, cache = true) {
     if (!url) return Promise.resolve(null);
     let p = this.images.get(url);
     if (!p) {
@@ -1151,6 +1650,7 @@ var CanvasPosterRenderer = class {
         img.onerror = () => resolve(null);
         img.src = url;
       });
+      if (!cache && this.images.size > 12) this.images.delete(this.images.keys().next().value);
       this.images.set(url, p);
     }
     return p;
@@ -1162,19 +1662,24 @@ var CanvasPosterRenderer = class {
   async draw(canvas, post, brand) {
     const fonts = this.options.fonts ?? DEFAULT_FONTS;
     await Promise.all([`800 80px ${fonts.display}`, `700 40px ${fonts.body}`].map((f) => document.fonts?.load(f).catch(() => void 0)));
-    const logo2 = await this.logoFor(post, brand);
+    const [logo2, photo] = await Promise.all([this.logoFor(post, brand), this.loadImage(post.design?.photo, false)]);
     const logoPlate = paletteFor(brand.colors, post.theme).logo === "onDark" && !brand.logoOnDarkUrl;
-    canvas.width = POSTER_WIDTH;
-    canvas.height = POSTER_HEIGHT;
+    const { width, height } = sizeOf(post.design);
+    canvas.width = width;
+    canvas.height = height;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas 2D is not available.");
     const label = typeof this.options.contactLabel === "function" ? this.options.contactLabel(brand) : this.options.contactLabel;
-    drawPoster(ctx, post, brand, { logo: logo2, logoPlate, fonts, ...label ? { contactLabel: label } : {} });
+    drawPoster(ctx, post, brand, { logo: logo2, photo, logoPlate, fonts, ...label ? { contactLabel: label } : {} });
   }
   async render(post, brand) {
+    return this.export(post, brand, "image/png");
+  }
+  /** PNG (lossless, for Facebook) or JPEG (smaller, for messaging apps and print shops). */
+  async export(post, brand, type = "image/png") {
     const canvas = document.createElement("canvas");
     await this.draw(canvas, post, brand);
-    return new Promise((resolve, reject) => canvas.toBlob((b) => b ? resolve(b) : reject(new Error("PNG export failed.")), "image/png"));
+    return new Promise((resolve, reject) => canvas.toBlob((b) => b ? resolve(b) : reject(new Error("Image export failed.")), type, 0.92));
   }
 };
 
@@ -1244,7 +1749,7 @@ function colorsFromImage(img, fallback) {
 }
 
 // src/app/studio.ts
-var EDITABLE = ["tag", "title", "subtitle", "points", "style", "theme", "caption", "hashtags", "scheduledAt"];
+var MAX_IMPORTED = 5e3;
 var DolphinStudio = class {
   constructor(deps) {
     this.deps = deps;
@@ -1253,6 +1758,7 @@ var DolphinStudio = class {
     this.now = deps.now ?? (() => /* @__PURE__ */ new Date());
     this.newId = deps.newId ?? (() => globalThis.crypto.randomUUID());
   }
+  deps;
   posts = [];
   listeners = /* @__PURE__ */ new Set();
   key;
@@ -1261,6 +1767,10 @@ var DolphinStudio = class {
   loaded = false;
   ideaList = [];
   peakReport = null;
+  insightsReport = null;
+  imported = null;
+  /** Posts being sent right now: a second click never publishes them twice. */
+  sending = /* @__PURE__ */ new Set();
   ns;
   get brand() {
     return this.deps.brand;
@@ -1297,9 +1807,15 @@ var DolphinStudio = class {
           return d;
         }
       };
-      this.posts = await read(this.key, []);
-      this.ideaList = await read(`ideas:${this.ns}`, []);
+      const stored = await read(this.key, []);
+      this.posts = (Array.isArray(stored) ? stored : []).map(sanitizePost).filter((p) => !!p);
+      const ideas = await read(`ideas:${this.ns}`, []);
+      this.ideaList = Array.isArray(ideas) ? ideas.filter((i) => i && typeof i.title === "string") : [];
       this.peakReport = await read(`peaks:${this.ns}`, null);
+      if (!Array.isArray(this.peakReport?.grid) || this.peakReport.grid.length !== 7) this.peakReport = null;
+      this.insightsReport = await read(`insights:${this.ns}`, null);
+      this.imported = await read(`imported:${this.ns}`, null);
+      if (!Array.isArray(this.imported?.samples)) this.imported = null;
       if (this.brandLocked) this.hasSavedBrand = true;
       else {
         const saved = await read(`brand:${this.ns}`, null);
@@ -1328,23 +1844,53 @@ var DolphinStudio = class {
   get peaks() {
     return this.peakReport;
   }
+  get insights() {
+    return this.insightsReport;
+  }
+  get importedData() {
+    return this.imported;
+  }
   /**
-   * Peak times from the page's own posts when the publisher can read them,
-   * otherwise (or when it fails) the general recommendation.
+   * Peak times and insights from the page's own posts (when the publisher can read them) and from
+   * the imported file, put on the same scale. Without enough data: the general recommendation.
    */
   async peakTimes() {
-    let samples = [];
+    let page = [];
     if (this.deps.publisher?.history) {
       try {
-        samples = await this.deps.publisher.history();
+        page = await this.deps.publisher.history();
       } catch {
-        samples = [];
+        page = [];
       }
     }
-    this.peakReport = analyzePeaks(samples);
+    const file = this.imported?.samples ?? [];
+    const samples = page.length && file.length ? mergeSources(page, file) : page.length ? page : file;
+    const from = page.length && file.length ? "mixed" : page.length ? "page" : "import";
+    this.peakReport = analyzePeaks(samples, void 0, from);
+    this.insightsReport = samples.length ? analyzeInsights(page.length || !this.imported?.undated ? samples : [], this.now()) : null;
     await this.deps.store.set(`peaks:${this.ns}`, JSON.stringify(this.peakReport));
+    await this.deps.store.set(`insights:${this.ns}`, JSON.stringify(this.insightsReport));
     this.emit();
     return this.peakReport;
+  }
+  /** Imports a CSV export (Meta Business Suite posts, Ads Manager by hour…) and recomputes the peaks. */
+  async importCsv(text2, fileName) {
+    const result = importEngagementCsv(text2);
+    this.imported = {
+      kind: result.kind,
+      samples: result.samples.slice(-MAX_IMPORTED),
+      importedAt: this.now().toISOString(),
+      ...fileName ? { fileName: fileName.slice(0, 120) } : {},
+      ...result.undated ? { undated: true } : {}
+    };
+    await this.deps.store.set(`imported:${this.ns}`, JSON.stringify(this.imported));
+    await this.peakTimes();
+    return result;
+  }
+  async clearImport() {
+    this.imported = null;
+    await this.deps.store.delete(`imported:${this.ns}`);
+    await this.peakTimes();
   }
   /** Reads the site through the model: a brand proposal (unless locked) and post ideas. */
   async analyze(snapshot) {
@@ -1365,17 +1911,25 @@ var DolphinStudio = class {
     if (!this.deps.llm) throw new DolphinError("not_configured", "No language model is connected.");
     const count = Math.min(MAX_POSTS, Math.max(1, Math.floor(opts.count)));
     const avoidTitles = [...opts.avoidTitles ?? [], ...this.posts.slice(-15).map((p) => p.title)];
-    const result = await this.deps.llm.generate(this.brand, { ...opts, count, avoidTitles });
+    const request = { count, avoidTitles };
+    for (const k of ["subject", "tone", "notes", "objective", "audience", "offer"]) if (opts[k]) request[k] = opts[k];
+    const result = await this.deps.llm.generate(this.brand, request);
     const now = this.now();
     const start = opts.startDate ?? new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
     const drafts = result.drafts.slice(0, count);
     const slots = opts.time === "auto" ? planWithPeaks(drafts.length, start, this.peakReport ?? await this.peakTimes(), opts.everyDays) : planSchedule(drafts.length, start, opts.time, opts.everyDays);
+    const campaign = opts.campaign?.trim().slice(0, 80);
+    const link = safeLink(opts.link);
+    const design = opts.design ? sanitizeDesign(opts.design) : {};
     const created = drafts.map((d, i) => ({
       ...d,
       id: this.newId(),
       createdAt: now.toISOString(),
       scheduledAt: slots[i].toISOString(),
-      status: "draft"
+      status: "draft",
+      ...campaign ? { campaign } : {},
+      ...link ? { link } : {},
+      ...Object.keys(design).length ? { design } : {}
     }));
     this.posts = [...this.posts, ...created];
     await this.save();
@@ -1384,11 +1938,29 @@ var DolphinStudio = class {
   async update(id, patch) {
     const post = this.require(id);
     if (post.status !== "draft" && post.status !== "failed") throw new DolphinError("invalid_request", "This post was already sent.");
-    const clean2 = Object.fromEntries(Object.entries(patch).filter(([k]) => EDITABLE.includes(k)));
-    const next = { ...post, ...clean2 };
+    if (this.sending.has(id)) throw new DolphinError("invalid_request", "This post is being sent.");
+    const next = { ...post, ...cleanPatch(patch, post) };
+    for (const k of ["design", "campaign", "link"]) if (next[k] === void 0) delete next[k];
     this.posts = this.posts.map((p) => p.id === id ? next : p);
     await this.save();
     return next;
+  }
+  /** Copies a post as a new draft, e.g. to make the story version of a feed poster. */
+  async duplicate(id, design) {
+    const src = this.require(id);
+    const copy = { ...structuredClone(src), id: this.newId(), createdAt: this.now().toISOString(), status: "draft" };
+    delete copy.externalId;
+    delete copy.error;
+    delete copy.errorCode;
+    if (design) copy.design = { ...copy.design, ...sanitizeDesign(design) };
+    const at = this.posts.findIndex((p) => p.id === id);
+    this.posts = [...this.posts.slice(0, at + 1), copy, ...this.posts.slice(at + 1)];
+    await this.save();
+    return copy;
+  }
+  /** The plan as CSV, for a spreadsheet or a client report. */
+  exportCsv() {
+    return planToCsv(this.posts);
   }
   async remove(id) {
     this.posts = this.posts.filter((p) => p.id !== id);
@@ -1402,27 +1974,30 @@ var DolphinStudio = class {
     return this.deps.renderer.render(this.require(id), this.brand);
   }
   caption(id) {
-    return fullCaption(this.require(id));
+    return captionWithLink(this.require(id));
   }
   /** Publishes now (`schedule: false`) or at each post's `scheduledAt`. */
   async send(ids, schedule) {
     const publisher = this.deps.publisher;
     if (!publisher) throw new DolphinError("not_configured", "No publishing account is connected.");
     const report = { sent: [], failed: [] };
-    for (const id of ids) {
+    for (const id of new Set(ids)) {
       const post = this.get(id);
-      if (!post || post.status !== "draft" && post.status !== "failed") continue;
+      if (!post || post.status !== "draft" && post.status !== "failed" || this.sending.has(id)) continue;
+      this.sending.add(id);
       try {
         const at = schedule ? new Date(post.scheduledAt) : void 0;
         if (at) assertSchedulable(at, this.now());
         const image = await this.deps.renderer.render(post, this.brand);
-        const { id: externalId } = await publisher.publish({ image, caption: fullCaption(post), ...at ? { scheduledAt: at } : {} });
+        const { id: externalId } = await publisher.publish({ image, caption: captionWithLink(post), ...at ? { scheduledAt: at } : {} });
         this.replace({ ...post, status: schedule ? "scheduled" : "published", externalId, error: void 0, errorCode: void 0 });
         report.sent.push(id);
       } catch (err) {
         const error = isDolphinError(err) ? err : new DolphinError("unknown", err instanceof Error ? err.message : String(err));
         this.replace({ ...post, status: "failed", error: error.message, errorCode: error.code });
         report.failed.push({ id, error });
+      } finally {
+        this.sending.delete(id);
       }
       await this.save();
     }
@@ -1430,6 +2005,9 @@ var DolphinStudio = class {
   }
   sendAllScheduled() {
     return this.send(this.posts.filter((p) => p.status === "draft" || p.status === "failed").map((p) => p.id), true);
+  }
+  isSending(id) {
+    return this.sending.has(id);
   }
   require(id) {
     const p = this.get(id);
@@ -1450,6 +2028,37 @@ var DolphinStudio = class {
     for (const fn of this.listeners) fn(this.posts);
   }
 };
+function cleanPatch(patch, post) {
+  const out = {};
+  const p = patch;
+  const text2 = (k, max) => {
+    if (typeof p[k] === "string") out[k] = p[k].slice(0, max);
+  };
+  text2("tag", 40);
+  text2("title", 120);
+  text2("subtitle", 160);
+  text2("caption", 2200);
+  if (Array.isArray(p.points)) out.points = p.points.filter((x) => typeof x === "string").map((x) => x.slice(0, 120)).slice(0, MAX_POINTS);
+  if (Array.isArray(p.hashtags)) out.hashtags = p.hashtags.filter((x) => typeof x === "string").map(cleanHashtag).filter(Boolean).slice(0, 10);
+  if (p.style === "checks" || p.style === "steps") out.style = p.style;
+  if (p.theme === "dark" || p.theme === "light" || p.theme === "accent") out.theme = p.theme;
+  if ("scheduledAt" in p) {
+    const d = new Date(String(p.scheduledAt));
+    if (Number.isNaN(d.getTime())) throw new DolphinError("invalid_request", "scheduledAt must be a valid date.");
+    out.scheduledAt = d.toISOString();
+  }
+  if ("design" in p) {
+    const d = sanitizeDesign(p.design === null ? {} : { ...post.design, ...p.design });
+    out.design = Object.keys(d).length ? d : void 0;
+  }
+  if ("campaign" in p) out.campaign = typeof p.campaign === "string" && p.campaign.trim() ? p.campaign.trim().slice(0, 80) : void 0;
+  if ("link" in p) {
+    const link = safeLink(p.link);
+    if (p.link && !link) throw new DolphinError("invalid_request", "The link must start with https:// or http://.");
+    out.link = link;
+  }
+  return out;
+}
 
 // src/widget/i18n.ts
 var fr = {
@@ -1578,6 +2187,71 @@ var fr = {
   subjects: { mix: "Un peu de tout", sell: "Vendre les produits disponibles", tips: "Conseils utiles", trust: "Confiance et coulisses", soon: "Annoncer les nouveaut\xE9s" },
   tones: { warm: "Chaleureux", pro: "Professionnel", bold: "\xC9nergique" },
   contact: "Contact",
+  campaign: "Campagne",
+  objective: "Objectif",
+  objectives: { awareness: "Faire conna\xEEtre la marque", engagement: "Faire r\xE9agir", traffic: "Visites du site", leads: "Demandes et contacts", sales: "Ventes", event: "\xC9v\xE9nement ou offre" },
+  campaignName: "Nom de la campagne",
+  campaignPh: "Ex. : rentr\xE9e 2026",
+  audienceFor: "Client\xE8le vis\xE9e (optionnel)",
+  audiencePh: "Ex. : jeunes \xE9leveurs de la r\xE9gion",
+  offer: "Offre ou \xE9v\xE9nement (faits uniquement)",
+  offerPh: "Ex. : portes ouvertes le samedi 12 octobre",
+  link: "Lien suivi (optionnel)",
+  linkHelp: "Ajout\xE9 \xE0 la fin du texte avec utm_source=facebook, pour mesurer les visites dans Google Analytics.",
+  badLink: "Le lien doit commencer par https://",
+  design: "Design",
+  format: "Format",
+  formats: { portrait: "Publication 4:5", square: "Carr\xE9 1:1", story: "Story 9:16" },
+  layout: "Mise en page",
+  layouts: { classic: "Classique", centered: "Centr\xE9e", minimal: "Minimaliste" },
+  photo: "Photo de fond",
+  addPhoto: "Ajouter une photo",
+  removePhoto: "Retirer la photo",
+  overlay: "Assombrir la photo",
+  hideLogo: "Masquer le logo",
+  duplicate: "Dupliquer",
+  makeStory: "Version story",
+  downloadJpg: "JPG",
+  badPhoto: "Photo illisible : utilisez un JPEG, PNG ou WebP.",
+  duplicated: "Copie cr\xE9\xE9e.",
+  calendar: "Calendrier",
+  calendarHint: "Les 4 prochaines semaines. Touchez une publication pour l'ouvrir.",
+  exportCsv: "Exporter le planning (CSV)",
+  today: "aujourd'hui",
+  insTitle: "Ce que disent vos publications",
+  insIntro: "Analysez votre page ou importez un fichier pour savoir quels jours et quelles heures marchent le mieux.",
+  insPosts: "Publications analys\xE9es",
+  insAvg: "Engagement moyen",
+  insRhythm: "Rythme",
+  insPerWeek: "{n} / semaine",
+  insTrend: "Tendance (4 semaines)",
+  insConfidence: "Fiabilit\xE9",
+  confidence: { low: "faible", medium: "moyenne", high: "bonne" },
+  insByDay: "Engagement moyen par jour",
+  insByHour: "Engagement moyen par heure de publication",
+  insTop: "Publications qui ont le mieux march\xE9",
+  insUntested: "Jamais test\xE9 : {days}. Publiez-y quelques fois pour le savoir.",
+  insBestDay: "Meilleur jour",
+  insBestBlock: "Meilleure tranche",
+  insNoPosts: "aucune publication",
+  insOpen: "Voir",
+  insScore: "score {n}",
+  adviceFew: "Moins de 3 publications par semaine : publier plus souvent aide la page \xE0 rester visible.",
+  adviceDown: "L'engagement baisse : variez les sujets (conseils, coulisses, questions).",
+  adviceUp: "L'engagement monte : gardez ce rythme et ces sujets.",
+  adviceLow: "Peu de donn\xE9es : la fiabilit\xE9 augmentera avec vos prochaines publications.",
+  importTitle: "Importer des donn\xE9es",
+  importHelp: "Fichier CSV export\xE9 de Meta Business Suite (publications) ou du Gestionnaire de publicit\xE9s (r\xE9partition par heure). Il reste sur cet appareil.",
+  importBtn: "Importer un fichier CSV",
+  imported: "{n} lignes import\xE9es ({kind}).",
+  importKinds: { posts: "publications", ads: "publicit\xE9s" },
+  importInfo: "Fichier import\xE9 : {file} \xB7 {n} lignes ({kind})",
+  clearImport: "Retirer l'import",
+  importUndated: "Rapport sans jour : chaque heure compte pour tous les jours.",
+  importBad: "Fichier non reconnu : il faut une colonne de date (ou d'heure) et une colonne d'engagement.",
+  peakFromImport: "Calcul\xE9 \xE0 partir de {n} lignes import\xE9es.",
+  peakMixed: "Calcul\xE9 \xE0 partir de votre page et du fichier import\xE9 ({n} lignes au total).",
+  autoLocked: "Studio verrouill\xE9 apr\xE8s 15 minutes sans activit\xE9.",
   errors: {
     auth: "Cl\xE9 ou jeton invalide.",
     permission: "Permission manquante.",
@@ -1720,6 +2394,71 @@ var en = {
   subjects: { mix: "A bit of everything", sell: "Sell available products", tips: "Useful tips", trust: "Trust and behind the scenes", soon: "Announce what's coming" },
   tones: { warm: "Warm", pro: "Professional", bold: "Bold" },
   contact: "Contact",
+  campaign: "Campaign",
+  objective: "Objective",
+  objectives: { awareness: "Make the brand known", engagement: "Get reactions", traffic: "Website visits", leads: "Inquiries and contacts", sales: "Sales", event: "Event or offer" },
+  campaignName: "Campaign name",
+  campaignPh: "E.g.: back to school 2026",
+  audienceFor: "Target audience (optional)",
+  audiencePh: "E.g.: young farmers in the region",
+  offer: "Offer or event (facts only)",
+  offerPh: "E.g.: open day on Saturday 12 October",
+  link: "Tracked link (optional)",
+  linkHelp: "Added at the end of the text with utm_source=facebook, to measure visits in Google Analytics.",
+  badLink: "The link must start with https://",
+  design: "Design",
+  format: "Format",
+  formats: { portrait: "Feed post 4:5", square: "Square 1:1", story: "Story 9:16" },
+  layout: "Layout",
+  layouts: { classic: "Classic", centered: "Centered", minimal: "Minimal" },
+  photo: "Background photo",
+  addPhoto: "Add a photo",
+  removePhoto: "Remove the photo",
+  overlay: "Darken the photo",
+  hideLogo: "Hide the logo",
+  duplicate: "Duplicate",
+  makeStory: "Story version",
+  downloadJpg: "JPG",
+  badPhoto: "Unreadable photo: use a JPEG, PNG or WebP.",
+  duplicated: "Copy created.",
+  calendar: "Calendar",
+  calendarHint: "The next 4 weeks. Tap a post to open it.",
+  exportCsv: "Export the plan (CSV)",
+  today: "today",
+  insTitle: "What your posts tell you",
+  insIntro: "Analyze your page or import a file to learn which days and hours work best.",
+  insPosts: "Posts analyzed",
+  insAvg: "Average engagement",
+  insRhythm: "Rhythm",
+  insPerWeek: "{n} / week",
+  insTrend: "Trend (4 weeks)",
+  insConfidence: "Reliability",
+  confidence: { low: "low", medium: "medium", high: "good" },
+  insByDay: "Average engagement by day",
+  insByHour: "Average engagement by posting hour",
+  insTop: "Posts that worked best",
+  insUntested: "Never tested: {days}. Post there a few times to find out.",
+  insBestDay: "Best day",
+  insBestBlock: "Best time slot",
+  insNoPosts: "no posts",
+  insOpen: "Open",
+  insScore: "score {n}",
+  adviceFew: "Fewer than 3 posts a week: posting more often keeps the page visible.",
+  adviceDown: "Engagement is going down: vary the topics (tips, behind the scenes, questions).",
+  adviceUp: "Engagement is going up: keep this rhythm and these topics.",
+  adviceLow: "Little data so far: reliability will grow with your next posts.",
+  importTitle: "Import data",
+  importHelp: "CSV file exported from Meta Business Suite (posts) or Ads Manager (breakdown by hour). It stays on this device.",
+  importBtn: "Import a CSV file",
+  imported: "{n} rows imported ({kind}).",
+  importKinds: { posts: "posts", ads: "ads" },
+  importInfo: "Imported file: {file} \xB7 {n} rows ({kind})",
+  clearImport: "Remove the import",
+  importUndated: "Report without days: each hour counts for every day.",
+  importBad: "File not recognized: it needs a date (or hour) column and an engagement column.",
+  peakFromImport: "Based on {n} imported rows.",
+  peakMixed: "Based on your page and the imported file ({n} rows in total).",
+  autoLocked: "Studio locked after 15 minutes without activity.",
   errors: {
     auth: "Invalid key or token.",
     permission: "Missing permission.",
@@ -1862,6 +2601,71 @@ var ar = {
   subjects: { mix: "\u0642\u0644\u064A\u0644 \u0645\u0646 \u0643\u0644 \u0634\u064A\u0621", sell: "\u0628\u064A\u0639 \u0627\u0644\u0645\u0646\u062A\u062C\u0627\u062A \u0627\u0644\u0645\u062A\u0648\u0641\u0631\u0629", tips: "\u0646\u0635\u0627\u0626\u062D \u0645\u0641\u064A\u062F\u0629", trust: "\u0627\u0644\u062B\u0642\u0629 \u0648\u0645\u0627 \u0648\u0631\u0627\u0621 \u0627\u0644\u0643\u0648\u0627\u0644\u064A\u0633", soon: "\u0627\u0644\u0625\u0639\u0644\u0627\u0646 \u0639\u0646 \u0627\u0644\u062C\u062F\u064A\u062F" },
   tones: { warm: "\u0648\u062F\u0648\u062F", pro: "\u0627\u062D\u062A\u0631\u0627\u0641\u064A", bold: "\u062D\u0645\u0627\u0633\u064A" },
   contact: "\u062A\u0648\u0627\u0635\u0644",
+  campaign: "\u0627\u0644\u062D\u0645\u0644\u0629",
+  objective: "\u0627\u0644\u0647\u062F\u0641",
+  objectives: { awareness: "\u0627\u0644\u062A\u0639\u0631\u064A\u0641 \u0628\u0627\u0644\u0639\u0644\u0627\u0645\u0629", engagement: "\u062C\u0644\u0628 \u0627\u0644\u062A\u0641\u0627\u0639\u0644", traffic: "\u0632\u064A\u0627\u0631\u0627\u062A \u0627\u0644\u0645\u0648\u0642\u0639", leads: "\u0627\u0644\u0627\u0633\u062A\u0641\u0633\u0627\u0631\u0627\u062A \u0648\u0627\u0644\u062A\u0648\u0627\u0635\u0644", sales: "\u0627\u0644\u0645\u0628\u064A\u0639\u0627\u062A", event: "\u062D\u062F\u062B \u0623\u0648 \u0639\u0631\u0636" },
+  campaignName: "\u0627\u0633\u0645 \u0627\u0644\u062D\u0645\u0644\u0629",
+  campaignPh: "\u0645\u062B\u0627\u0644: \u0627\u0644\u0639\u0648\u062F\u0629 \u0627\u0644\u0645\u062F\u0631\u0633\u064A\u0629 2026",
+  audienceFor: "\u0627\u0644\u062C\u0645\u0647\u0648\u0631 \u0627\u0644\u0645\u0633\u062A\u0647\u062F\u0641 (\u0627\u062E\u062A\u064A\u0627\u0631\u064A)",
+  audiencePh: "\u0645\u062B\u0627\u0644: \u0627\u0644\u0645\u0631\u0628\u0651\u0648\u0646 \u0627\u0644\u0634\u0628\u0627\u0628 \u0641\u064A \u0627\u0644\u0645\u0646\u0637\u0642\u0629",
+  offer: "\u0627\u0644\u0639\u0631\u0636 \u0623\u0648 \u0627\u0644\u062D\u062F\u062B (\u062D\u0642\u0627\u0626\u0642 \u0641\u0642\u0637)",
+  offerPh: "\u0645\u062B\u0627\u0644: \u064A\u0648\u0645 \u0645\u0641\u062A\u0648\u062D \u064A\u0648\u0645 \u0627\u0644\u0633\u0628\u062A 12 \u0623\u0643\u062A\u0648\u0628\u0631",
+  link: "\u0631\u0627\u0628\u0637 \u0645\u062A\u062A\u0628\u064E\u0651\u0639 (\u0627\u062E\u062A\u064A\u0627\u0631\u064A)",
+  linkHelp: "\u064A\u064F\u0636\u0627\u0641 \u0641\u064A \u0622\u062E\u0631 \u0627\u0644\u0646\u0635 \u0645\u0639 utm_source=facebook \u0644\u0642\u064A\u0627\u0633 \u0627\u0644\u0632\u064A\u0627\u0631\u0627\u062A \u0641\u064A Google Analytics.",
+  badLink: "\u064A\u062C\u0628 \u0623\u0646 \u064A\u0628\u062F\u0623 \u0627\u0644\u0631\u0627\u0628\u0637 \u0628\u0640 https://",
+  design: "\u0627\u0644\u062A\u0635\u0645\u064A\u0645",
+  format: "\u0627\u0644\u0645\u0642\u0627\u0633",
+  formats: { portrait: "\u0645\u0646\u0634\u0648\u0631 4:5", square: "\u0645\u0631\u0628\u0639 1:1", story: "\u0642\u0635\u0629 9:16" },
+  layout: "\u0627\u0644\u062A\u062E\u0637\u064A\u0637",
+  layouts: { classic: "\u0643\u0644\u0627\u0633\u064A\u0643\u064A", centered: "\u0641\u064A \u0627\u0644\u0648\u0633\u0637", minimal: "\u0628\u0633\u064A\u0637" },
+  photo: "\u0635\u0648\u0631\u0629 \u0627\u0644\u062E\u0644\u0641\u064A\u0629",
+  addPhoto: "\u0625\u0636\u0627\u0641\u0629 \u0635\u0648\u0631\u0629",
+  removePhoto: "\u0625\u0632\u0627\u0644\u0629 \u0627\u0644\u0635\u0648\u0631\u0629",
+  overlay: "\u062A\u0639\u062A\u064A\u0645 \u0627\u0644\u0635\u0648\u0631\u0629",
+  hideLogo: "\u0625\u062E\u0641\u0627\u0621 \u0627\u0644\u0634\u0639\u0627\u0631",
+  duplicate: "\u0646\u0633\u062E",
+  makeStory: "\u0646\u0633\u062E\u0629 \u0642\u0635\u0629",
+  downloadJpg: "JPG",
+  badPhoto: "\u0635\u0648\u0631\u0629 \u063A\u064A\u0631 \u0645\u0642\u0631\u0648\u0621\u0629: \u0627\u0633\u062A\u062E\u062F\u0645 JPEG \u0623\u0648 PNG \u0623\u0648 WebP.",
+  duplicated: "\u062A\u0645 \u0625\u0646\u0634\u0627\u0621 \u0646\u0633\u062E\u0629.",
+  calendar: "\u0627\u0644\u062A\u0642\u0648\u064A\u0645",
+  calendarHint: "\u0627\u0644\u0623\u0633\u0627\u0628\u064A\u0639 \u0627\u0644\u0623\u0631\u0628\u0639\u0629 \u0627\u0644\u0642\u0627\u062F\u0645\u0629. \u0627\u0636\u063A\u0637 \u0639\u0644\u0649 \u0645\u0646\u0634\u0648\u0631 \u0644\u0641\u062A\u062D\u0647.",
+  exportCsv: "\u062A\u0635\u062F\u064A\u0631 \u0627\u0644\u062E\u0637\u0629 (CSV)",
+  today: "\u0627\u0644\u064A\u0648\u0645",
+  insTitle: "\u0645\u0627\u0630\u0627 \u062A\u0642\u0648\u0644 \u0645\u0646\u0634\u0648\u0631\u0627\u062A\u0643",
+  insIntro: "\u062D\u0644\u0651\u0644 \u0635\u0641\u062D\u062A\u0643 \u0623\u0648 \u0627\u0633\u062A\u0648\u0631\u062F \u0645\u0644\u0641\u064B\u0627 \u0644\u062A\u0639\u0631\u0641 \u0623\u064A \u0627\u0644\u0623\u064A\u0627\u0645 \u0648\u0627\u0644\u0633\u0627\u0639\u0627\u062A \u062A\u0646\u062C\u062D \u0623\u0643\u062B\u0631.",
+  insPosts: "\u0627\u0644\u0645\u0646\u0634\u0648\u0631\u0627\u062A \u0627\u0644\u0645\u062D\u0644\u064E\u0651\u0644\u0629",
+  insAvg: "\u0645\u062A\u0648\u0633\u0637 \u0627\u0644\u062A\u0641\u0627\u0639\u0644",
+  insRhythm: "\u0627\u0644\u0648\u062A\u064A\u0631\u0629",
+  insPerWeek: "{n} \u0641\u064A \u0627\u0644\u0623\u0633\u0628\u0648\u0639",
+  insTrend: "\u0627\u0644\u0627\u062A\u062C\u0627\u0647 (4 \u0623\u0633\u0627\u0628\u064A\u0639)",
+  insConfidence: "\u0627\u0644\u0645\u0648\u062B\u0648\u0642\u064A\u0629",
+  confidence: { low: "\u0636\u0639\u064A\u0641\u0629", medium: "\u0645\u062A\u0648\u0633\u0637\u0629", high: "\u062C\u064A\u062F\u0629" },
+  insByDay: "\u0645\u062A\u0648\u0633\u0637 \u0627\u0644\u062A\u0641\u0627\u0639\u0644 \u062D\u0633\u0628 \u0627\u0644\u064A\u0648\u0645",
+  insByHour: "\u0645\u062A\u0648\u0633\u0637 \u0627\u0644\u062A\u0641\u0627\u0639\u0644 \u062D\u0633\u0628 \u0633\u0627\u0639\u0629 \u0627\u0644\u0646\u0634\u0631",
+  insTop: "\u0627\u0644\u0645\u0646\u0634\u0648\u0631\u0627\u062A \u0627\u0644\u0623\u0646\u062C\u062D",
+  insUntested: "\u0644\u0645 \u064A\u064F\u062C\u0631\u064E\u0651\u0628 \u0623\u0628\u062F\u064B\u0627: {days}. \u0627\u0646\u0634\u0631 \u0641\u064A\u0647 \u0628\u0636\u0639 \u0645\u0631\u0627\u062A \u0644\u062A\u0639\u0631\u0641.",
+  insBestDay: "\u0623\u0641\u0636\u0644 \u064A\u0648\u0645",
+  insBestBlock: "\u0623\u0641\u0636\u0644 \u0641\u062A\u0631\u0629",
+  insNoPosts: "\u0644\u0627 \u0645\u0646\u0634\u0648\u0631\u0627\u062A",
+  insOpen: "\u0641\u062A\u062D",
+  insScore: "\u0627\u0644\u0646\u062A\u064A\u062C\u0629 {n}",
+  adviceFew: "\u0623\u0642\u0644 \u0645\u0646 3 \u0645\u0646\u0634\u0648\u0631\u0627\u062A \u0641\u064A \u0627\u0644\u0623\u0633\u0628\u0648\u0639: \u0627\u0644\u0646\u0634\u0631 \u0628\u0627\u0646\u062A\u0638\u0627\u0645 \u0623\u0643\u062B\u0631 \u064A\u064F\u0628\u0642\u064A \u0627\u0644\u0635\u0641\u062D\u0629 \u0638\u0627\u0647\u0631\u0629.",
+  adviceDown: "\u0627\u0644\u062A\u0641\u0627\u0639\u0644 \u0641\u064A \u062A\u0631\u0627\u062C\u0639: \u0646\u0648\u0651\u0639 \u0627\u0644\u0645\u0648\u0627\u0636\u064A\u0639 (\u0646\u0635\u0627\u0626\u062D\u060C \u0643\u0648\u0627\u0644\u064A\u0633\u060C \u0623\u0633\u0626\u0644\u0629).",
+  adviceUp: "\u0627\u0644\u062A\u0641\u0627\u0639\u0644 \u0641\u064A \u0627\u0631\u062A\u0641\u0627\u0639: \u062D\u0627\u0641\u0638 \u0639\u0644\u0649 \u0647\u0630\u0647 \u0627\u0644\u0648\u062A\u064A\u0631\u0629 \u0648\u0647\u0630\u0647 \u0627\u0644\u0645\u0648\u0627\u0636\u064A\u0639.",
+  adviceLow: "\u0627\u0644\u0628\u064A\u0627\u0646\u0627\u062A \u0642\u0644\u064A\u0644\u0629: \u0633\u062A\u0632\u062F\u0627\u062F \u0627\u0644\u0645\u0648\u062B\u0648\u0642\u064A\u0629 \u0645\u0639 \u0645\u0646\u0634\u0648\u0631\u0627\u062A\u0643 \u0627\u0644\u0642\u0627\u062F\u0645\u0629.",
+  importTitle: "\u0627\u0633\u062A\u064A\u0631\u0627\u062F \u0628\u064A\u0627\u0646\u0627\u062A",
+  importHelp: "\u0645\u0644\u0641 CSV \u0645\u064F\u0635\u062F\u064E\u0651\u0631 \u0645\u0646 Meta Business Suite (\u0627\u0644\u0645\u0646\u0634\u0648\u0631\u0627\u062A) \u0623\u0648 \u0645\u0646 \u0645\u062F\u064A\u0631 \u0627\u0644\u0625\u0639\u0644\u0627\u0646\u0627\u062A (\u0627\u0644\u062A\u0648\u0632\u064A\u0639 \u062D\u0633\u0628 \u0627\u0644\u0633\u0627\u0639\u0629). \u064A\u0628\u0642\u0649 \u0639\u0644\u0649 \u0647\u0630\u0627 \u0627\u0644\u062C\u0647\u0627\u0632.",
+  importBtn: "\u0627\u0633\u062A\u064A\u0631\u0627\u062F \u0645\u0644\u0641 CSV",
+  imported: "\u062A\u0645 \u0627\u0633\u062A\u064A\u0631\u0627\u062F {n} \u0633\u0637\u0631 ({kind}).",
+  importKinds: { posts: "\u0645\u0646\u0634\u0648\u0631\u0627\u062A", ads: "\u0625\u0639\u0644\u0627\u0646\u0627\u062A" },
+  importInfo: "\u0627\u0644\u0645\u0644\u0641 \u0627\u0644\u0645\u0633\u062A\u0648\u0631\u062F: {file} \xB7 {n} \u0633\u0637\u0631 ({kind})",
+  clearImport: "\u0625\u0632\u0627\u0644\u0629 \u0627\u0644\u0627\u0633\u062A\u064A\u0631\u0627\u062F",
+  importUndated: "\u062A\u0642\u0631\u064A\u0631 \u0628\u0644\u0627 \u0623\u064A\u0627\u0645: \u0643\u0644 \u0633\u0627\u0639\u0629 \u062A\u064F\u062D\u0633\u0628 \u0644\u0643\u0644 \u0627\u0644\u0623\u064A\u0627\u0645.",
+  importBad: "\u0645\u0644\u0641 \u063A\u064A\u0631 \u0645\u0639\u0631\u0648\u0641: \u064A\u0644\u0632\u0645 \u0639\u0645\u0648\u062F \u0644\u0644\u062A\u0627\u0631\u064A\u062E (\u0623\u0648 \u0627\u0644\u0633\u0627\u0639\u0629) \u0648\u0639\u0645\u0648\u062F \u0644\u0644\u062A\u0641\u0627\u0639\u0644.",
+  peakFromImport: "\u0645\u062D\u0633\u0648\u0628 \u0645\u0646 {n} \u0633\u0637\u0631\u064B\u0627 \u0645\u0633\u062A\u0648\u0631\u062F\u064B\u0627.",
+  peakMixed: "\u0645\u062D\u0633\u0648\u0628 \u0645\u0646 \u0635\u0641\u062D\u062A\u0643 \u0648\u0645\u0646 \u0627\u0644\u0645\u0644\u0641 \u0627\u0644\u0645\u0633\u062A\u0648\u0631\u062F ({n} \u0633\u0637\u0631\u064B\u0627 \u0641\u064A \u0627\u0644\u0645\u062C\u0645\u0648\u0639).",
+  autoLocked: "\u062A\u0645 \u0642\u0641\u0644 \u0627\u0644\u0627\u0633\u062A\u0648\u062F\u064A\u0648 \u0628\u0639\u062F 15 \u062F\u0642\u064A\u0642\u0629 \u062F\u0648\u0646 \u0646\u0634\u0627\u0637.",
   errors: {
     auth: "\u0645\u0641\u062A\u0627\u062D \u0623\u0648 \u0631\u0645\u0632 \u063A\u064A\u0631 \u0635\u0627\u0644\u062D.",
     permission: "\u0635\u0644\u0627\u062D\u064A\u0629 \u0646\u0627\u0642\u0635\u0629.",
@@ -1880,50 +2684,6 @@ var ar = {
 };
 var MESSAGES = { fr, en, ar };
 var fill = (s2, vars) => s2.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ""));
-
-// src/widget/logo.ts
-var MAX_SIDE = 512;
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("image"));
-    img.src = src;
-  });
-}
-function toDataUrl(img) {
-  const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
-  const k = Math.min(1, MAX_SIDE / Math.max(w, h || 1));
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.max(1, Math.round(w * k));
-  canvas.height = Math.max(1, Math.round(h * k));
-  canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/png");
-}
-var fallbackColors = (themeColor) => themeColor && /^#[0-9a-f]{6}$/i.test(themeColor) ? { primary: themeColor, accent: DEFAULT_COLORS.accent } : DEFAULT_COLORS;
-async function chooseLogo(candidates, themeColor) {
-  for (const src of candidates) {
-    try {
-      const img = await loadImage(src);
-      if ((img.naturalWidth || img.width) < 32) continue;
-      const logoUrl = toDataUrl(img);
-      return { logoUrl, colors: colorsFromImage(img, fallbackColors(themeColor)) };
-    } catch {
-    }
-  }
-  return { colors: fallbackColors(themeColor) };
-}
-async function logoFromFile(file) {
-  if (!/^image\/(png|jpeg|webp|svg\+xml)$/.test(file.type)) throw new Error("type");
-  const url = URL.createObjectURL(file);
-  try {
-    const img = await loadImage(url);
-    return { logoUrl: toDataUrl(img), colors: colorsFromImage(img) };
-  } finally {
-    URL.revokeObjectURL(url);
-  }
-}
 
 // src/widget/profile.ts
 var esc = (s2) => String(s2 ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
@@ -1988,7 +2748,7 @@ function peakCard(t, report, busy) {
       const label = `${day} ${hour(from)}\u2013${hour(from + 3)} : ${Math.round(v * 100)} %`;
       return `<span class="hm-cell" style="background:${HEAT[step]}" title="${esc(label)}" aria-label="${esc(label)}" role="img"></span>`;
     }).join("")}</div>`).join("");
-    body += `<p class="state ${report.source === "page" ? "ok" : "missing"}">${esc(report.source === "page" ? t.peakFromPage.replace("{n}", String(report.samples)) : t.peakDefault)}</p>
+    body += `<p class="state ${report.source === "default" ? "missing" : "ok"}">${esc(({ page: t.peakFromPage, import: t.peakFromImport, mixed: t.peakMixed, default: t.peakDefault }[report.source] ?? t.peakDefault).replace("{n}", String(report.samples)))}</p>
       <div class="peaks"><div><h4>${esc(t.peakBest)}</h4><ol class="best">${report.best.map((b) => `<li><strong>${esc(t.days[b.day])}</strong> \xB7 ${esc(hour(b.hour))}</li>`).join("")}</ol></div>
       <div class="hm" role="group" aria-label="${esc(t.peakTitle)}"><div class="hm-row hm-head"><span class="hm-day"></span>${BLOCKS.map((h) => `<span>${esc(hour(h))}</span>`).join("")}</div>${rows}
       <div class="hm-legend"><span>${esc(t.peakLess)}</span>${HEAT.map((c) => `<i style="background:${c}"></i>`).join("")}<span>${esc(t.peakMore)}</span></div></div></div>`;
@@ -2033,8 +2793,233 @@ var PROFILE_STYLES = (
 `
 );
 
+// src/widget/insights.ts
+var BAR = "#5598e7";
+var BAR_BEST = "#104281";
+function insightsCard(t, lang, report, imported, busy) {
+  const nf = new Intl.NumberFormat(lang === "ar" ? "ar" : lang, { maximumFractionDigits: 1 });
+  const hour = (h) => t.hourShort.replace("{h}", String(h));
+  let body = `<p class="hint">${esc(t.insIntro)}</p>`;
+  if (report && report.samples > 0) {
+    const kpi = (label, value, extra = "") => `<div class="kpi"><span>${esc(label)}</span><strong${extra}>${esc(value)}</strong></div>`;
+    const trend = report.trend === void 0 ? "\u2014" : `${report.trend > 0 ? "+" : ""}${nf.format(report.trend)} %`;
+    body += `<div class="kpis">
+      ${kpi(t.insPosts, nf.format(report.samples))}
+      ${kpi(t.insAvg, nf.format(report.avgPerPost))}
+      ${kpi(t.insRhythm, fill(t.insPerWeek, { n: nf.format(report.postsPerWeek) }))}
+      ${kpi(t.insTrend, trend, report.trend === void 0 ? "" : ` class="${report.trend >= 0 ? "up" : "down"}"`)}
+      ${kpi(t.insConfidence, t.confidence[report.confidence], ` class="conf-${report.confidence}"`)}</div>`;
+    const maxDay = Math.max(...report.byDay.map((d) => d.avg), 0);
+    const dayRows = report.byDay.map((d, i) => {
+      const w = maxDay > 0 ? Math.max(2, d.avg / maxDay * 100) : 0;
+      const label = `${t.days[i]} : ${d.posts ? `${nf.format(d.avg)} (${d.posts})` : t.insNoPosts}`;
+      return `<div class="bar-row" title="${esc(label)}"><span class="bar-label">${esc(t.days[i].slice(0, 3))}</span>
+        <span class="bar-track">${d.posts ? `<i style="width:${w.toFixed(1)}%;background:${i === report.bestDay ? BAR_BEST : BAR}"></i>` : ""}</span>
+        <span class="bar-val">${d.posts ? esc(nf.format(d.avg)) : "\u2014"}</span></div>`;
+    }).join("");
+    const maxHour = Math.max(...report.byHour.map((h) => h.avg), 0);
+    const best = report.bestBlock;
+    const cols = report.byHour.map((h, i) => {
+      const ht = maxHour > 0 && h.posts ? Math.max(4, h.avg / maxHour * 100) : 0;
+      const inBest = best !== void 0 && i >= best && i < best + 3;
+      const label = `${hour(i)} : ${h.posts ? `${nf.format(h.avg)} (${h.posts})` : t.insNoPosts}`;
+      return `<span class="col" title="${esc(label)}" aria-label="${esc(label)}" role="img"><i style="height:${ht.toFixed(1)}%;background:${inBest ? BAR_BEST : BAR}"></i></span>`;
+    }).join("");
+    const axis = report.byHour.map((_, i) => `<span>${i % 3 === 0 ? esc(String(i)) : ""}</span>`).join("");
+    const fmtDate = (iso) => new Date(iso).toLocaleString(lang === "ar" ? "ar" : lang, { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+    const top = report.top.map((p) => `<li><div><strong>${esc(fmtDate(p.createdTime))}</strong> \xB7 ${esc(fill(t.insScore, { n: nf.format(p.score) }))}
+      ${p.message ? `<p>${esc(p.message)}</p>` : ""}</div>${p.url && /^https:\/\//.test(p.url) ? `<a href="${esc(p.url)}" target="_blank" rel="noopener noreferrer">${esc(t.insOpen)}</a>` : ""}</li>`).join("");
+    const advice = [];
+    if (report.confidence === "low") advice.push(t.adviceLow);
+    if (report.postsPerWeek < 3) advice.push(t.adviceFew);
+    if (report.trend !== void 0 && report.trend <= -15) advice.push(t.adviceDown);
+    if (report.trend !== void 0 && report.trend >= 15) advice.push(t.adviceUp);
+    if (report.untestedDays.length && report.untestedDays.length < 7) advice.push(fill(t.insUntested, { days: report.untestedDays.map((d) => t.days[d]).join(", ") }));
+    body += `<div class="ins">
+      <div><h4>${esc(t.insByDay)}</h4><div class="bars">${dayRows}</div>
+        ${report.bestDay !== void 0 ? `<p class="hint">${esc(t.insBestDay)} : <strong>${esc(t.days[report.bestDay])}</strong></p>` : ""}</div>
+      <div><h4>${esc(t.insByHour)}</h4><div class="cols" role="group" aria-label="${esc(t.insByHour)}">${cols}</div><div class="axis" aria-hidden="true">${axis}</div>
+        ${best !== void 0 ? `<p class="hint">${esc(t.insBestBlock)} : <strong>${esc(hour(best))} \u2013 ${esc(hour(best + 3))}</strong></p>` : ""}</div></div>
+      ${advice.length ? `<ul class="advice">${advice.map((a) => `<li>${esc(a)}</li>`).join("")}</ul>` : ""}
+      ${top ? `<h4>${esc(t.insTop)}</h4><ol class="top">${top}</ol>` : ""}`;
+  }
+  const info = imported ? `<p class="state ok">${esc(fill(t.importInfo, { file: imported.fileName ?? "CSV", n: imported.samples.length, kind: t.importKinds[imported.kind] }))}</p>
+       ${imported.undated ? `<p class="hint">${esc(t.importUndated)}</p>` : ""}` : "";
+  body += `<h4>${esc(t.importTitle)}</h4><p class="hint">${esc(t.importHelp)}</p>${info}
+    <div class="row"><label class="upload"><input type="file" accept=".csv,text/csv" data-import${busy ? " disabled" : ""}><span>${esc(t.importBtn)}</span></label>
+    ${imported ? `<button class="danger" data-act="clear-import" data-confirm>${esc(t.clearImport)}</button>` : ""}</div>`;
+  return `<div class="card insights"><h3>${esc(t.insTitle)}</h3>${body}</div>`;
+}
+var INSIGHTS_STYLES = (
+  /* css */
+  `
+.kpis{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:14px}
+.kpi{border:1px solid var(--d-line);border-radius:12px;padding:10px 12px}
+.kpi span{display:block;font-size:.78rem;color:var(--d-muted)}
+.kpi strong{font-size:1.15rem}
+.kpi .up{color:var(--d-ok)}.kpi .down{color:var(--d-danger)}.kpi .conf-low{color:#a15c07}
+.ins{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr);gap:22px}
+.bars{display:grid;gap:4px}
+.bar-row{display:grid;grid-template-columns:40px minmax(0,1fr) 52px;gap:8px;align-items:center;font-size:.82rem}
+.bar-label{color:var(--d-muted)}.bar-val{text-align:end;font-variant-numeric:tabular-nums}
+.bar-track{height:14px;border-radius:4px;background:color-mix(in srgb,var(--d-line) 55%,#fff);overflow:hidden}
+.bar-track i{display:block;height:100%;border-radius:0 4px 4px 0}
+.cols{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:2px;align-items:end;height:110px;border-bottom:1px solid var(--d-line)}
+.col{height:100%;display:flex;align-items:flex-end}
+.col i{display:block;width:100%;border-radius:3px 3px 0 0}
+.axis{display:grid;grid-template-columns:repeat(24,minmax(0,1fr));gap:2px;font-size:.72rem;color:var(--d-muted);margin-top:4px}
+.advice{margin:14px 0 4px;padding-inline-start:1.2em;display:grid;gap:4px;font-size:.9rem}
+.top{margin:0 0 12px;padding-inline-start:1.3em;display:grid;gap:8px}
+.top li>div{display:inline}
+.top p{margin:2px 0 0;color:var(--d-muted);font-size:.86rem}
+.top li{position:relative}
+.top a{margin-inline-start:8px;font-weight:600;color:var(--d-primary)}
+.upload input[disabled]+span{opacity:.55}
+@container (max-width:720px){.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.ins{grid-template-columns:1fr}}
+`
+);
+
+// src/widget/logo.ts
+var MAX_SIDE = 512;
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("image"));
+    img.src = src;
+  });
+}
+function toDataUrl(img) {
+  const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+  const k = Math.min(1, MAX_SIDE / Math.max(w, h || 1));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(w * k));
+  canvas.height = Math.max(1, Math.round(h * k));
+  canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/png");
+}
+var fallbackColors = (themeColor) => themeColor && /^#[0-9a-f]{6}$/i.test(themeColor) ? { primary: themeColor, accent: DEFAULT_COLORS.accent } : DEFAULT_COLORS;
+async function chooseLogo(candidates, themeColor) {
+  for (const src of candidates) {
+    try {
+      const img = await loadImage(src);
+      if ((img.naturalWidth || img.width) < 32) continue;
+      const logoUrl = toDataUrl(img);
+      return { logoUrl, colors: colorsFromImage(img, fallbackColors(themeColor)) };
+    } catch {
+    }
+  }
+  return { colors: fallbackColors(themeColor) };
+}
+async function logoFromFile(file) {
+  if (!/^image\/(png|jpeg|webp|svg\+xml)$/.test(file.type)) throw new Error("type");
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await loadImage(url);
+    return { logoUrl: toDataUrl(img), colors: colorsFromImage(img) };
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+async function photoFromFile(file) {
+  if (!/^image\/(png|jpeg|webp)$/.test(file.type) || file.size > 25 * 1024 * 1024) throw new Error("type");
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await loadImage(url);
+    const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    for (const [side, q] of [[1600, 0.85], [1280, 0.8], [1024, 0.75]]) {
+      const k = Math.min(1, side / Math.max(w, h || 1));
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(w * k));
+      canvas.height = Math.max(1, Math.round(h * k));
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      const data = canvas.toDataURL("image/jpeg", q);
+      if (data.length <= 19e5) return data;
+    }
+    throw new Error("size");
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+// src/widget/planner.ts
+var DEFAULT_CAMPAIGN = { objective: "engagement", campaign: "", audience: "", offer: "", link: "", format: "portrait", layout: "classic" };
+var options = (keys, labels, value) => keys.map((k) => `<option value="${esc(k)}"${k === value ? " selected" : ""}>${esc(labels[k])}</option>`).join("");
+function campaignFields(t, c) {
+  const input = (k, label, ph, attrs = "") => `<label><span>${esc(label)}</span><input data-pref="c.${k}" value="${esc(c[k])}" placeholder="${esc(ph)}"${attrs}></label>`;
+  return `<details class="campaign" data-k="campaign"${c.campaign || c.offer || c.link ? " open" : ""}><summary>${esc(t.campaign)} \xB7 ${esc(t.design)}</summary>
+    <div class="grid">
+      <label><span>${esc(t.objective)}</span><select data-pref="c.objective">${options(OBJECTIVES, t.objectives, c.objective)}</select></label>
+      ${input("campaign", t.campaignName, t.campaignPh, ' maxlength="80"')}
+      ${input("audience", t.audienceFor, t.audiencePh, ' maxlength="200"')}
+      ${input("offer", t.offer, t.offerPh, ' maxlength="500"')}
+    </div>
+    <label><span>${esc(t.link)}</span><em class="help">${esc(t.linkHelp)}</em><input data-pref="c.link" value="${esc(c.link)}" placeholder="https://" inputmode="url" maxlength="1000"></label>
+    <div class="grid">
+      <label><span>${esc(t.format)}</span><select data-pref="c.format">${options(FORMATS, t.formats, c.format)}</select></label>
+      <label><span>${esc(t.layout)}</span><select data-pref="c.layout">${options(LAYOUTS, t.layouts, c.layout)}</select></label>
+    </div></details>`;
+}
+function designFields(t, p, editable) {
+  const ro = editable ? "" : " disabled";
+  const d = p.design ?? {};
+  const id = esc(p.id);
+  return `<details class="designer" data-k="design:${id}"><summary>${esc(t.design)} \xB7 ${esc(t.formats[d.format ?? "portrait"])} \xB7 ${esc(t.layouts[d.layout ?? "classic"])}</summary>
+    <div class="grid">
+      <label><span>${esc(t.format)}</span><select data-d="${id}:format"${ro}>${options(FORMATS, t.formats, d.format ?? "portrait")}</select></label>
+      <label><span>${esc(t.layout)}</span><select data-d="${id}:layout"${ro}>${options(LAYOUTS, t.layouts, d.layout ?? "classic")}</select></label>
+    </div>
+    <div class="row photo-row">
+      <label class="upload"><input type="file" accept="image/jpeg,image/png,image/webp" data-photo="${id}"${ro}><span>${esc(d.photo ? t.photo : t.addPhoto)}</span></label>
+      ${d.photo && editable ? `<button class="link" data-act="no-photo" data-id="${id}">${esc(t.removePhoto)}</button>` : ""}
+      <label class="check"><input type="checkbox" data-d="${id}:hideLogo"${d.hideLogo ? " checked" : ""}${ro}><span>${esc(t.hideLogo)}</span></label>
+    </div>
+    ${d.photo ? `<label><span>${esc(t.overlay)}</span><input type="range" min="0" max="0.9" step="0.05" data-d="${id}:overlay" value="${esc(d.overlay ?? 0.55)}"${ro}></label>` : ""}
+    <div class="grid">
+      <label><span>${esc(t.campaignName)}</span><input data-f="${id}:campaign" value="${esc(p.campaign)}" maxlength="80"${ro}></label>
+      <label><span>${esc(t.link)}</span><input data-f="${id}:link" value="${esc(p.link)}" placeholder="https://" inputmode="url" maxlength="1000"${ro}></label>
+    </div></details>`;
+}
+function calendarCard(t, lang, posts, now) {
+  if (!posts.length) return "";
+  const days = calendarWeeks(posts, now, 4);
+  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const time = (iso) => new Date(iso).toLocaleTimeString(lang === "ar" ? "ar" : lang, { hour: "2-digit", minute: "2-digit" });
+  const head = t.days.map((d) => `<span class="cal-h">${esc(d.slice(0, 3))}</span>`).join("");
+  const cells = days.map((d) => {
+    const [, m, day] = d.date.split("-");
+    const chips = d.posts.map((p) => `<button class="chip ${p.status}" data-act="goto" data-id="${esc(p.id)}" title="${esc(`${time(p.scheduledAt)} \xB7 ${p.title}`)}">
+      <b>${esc(time(p.scheduledAt))}</b> ${esc(p.title)}</button>`).join("");
+    return `<div class="cal-d${d.date === todayKey ? " today" : ""}${d.date < todayKey ? " past" : ""}"><span class="cal-n">${esc(`${Number(day)}/${Number(m)}`)}${d.date === todayKey ? ` \xB7 ${esc(t.today)}` : ""}</span>${chips}</div>`;
+  }).join("");
+  return `<div class="card"><h3>${esc(t.calendar)}</h3><p class="hint">${esc(t.calendarHint)}</p><div class="cal">${head}${cells}</div></div>`;
+}
+var PLANNER_STYLES = (
+  /* css */
+  `
+details.campaign,details.designer{border:1px dashed var(--d-line);border-radius:12px;padding:10px 12px;margin:4px 0 12px}
+details>summary{cursor:pointer;font-weight:700;color:var(--d-primary);font-size:.92rem}
+details[open]>summary{margin-bottom:10px}
+.photo-row{margin-bottom:10px}.photo-row .check{margin:0}
+input[type=range]{padding:0;accent-color:var(--d-primary)}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px}
+.cal-h{font-size:.75rem;font-weight:700;color:var(--d-muted);text-align:center}
+.cal-d{min-height:74px;border:1px solid var(--d-line);border-radius:8px;padding:4px;display:flex;flex-direction:column;gap:3px;background:#fff}
+.cal-d.past{background:color-mix(in srgb,var(--d-line) 35%,#fff)}
+.cal-d.today{border-color:var(--d-primary);box-shadow:inset 0 0 0 1px var(--d-primary)}
+.cal-n{font-size:.72rem;color:var(--d-muted)}
+.chip{font:600 .72rem var(--d-font);text-align:start;padding:3px 5px;border-radius:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:color-mix(in srgb,var(--d-accent) 16%,#fff);color:var(--d-ink);border:0}
+.chip.scheduled,.chip.published{background:color-mix(in srgb,var(--d-ok) 18%,#fff)}
+.chip.failed{background:color-mix(in srgb,var(--d-danger) 15%,#fff)}
+.chip b{font-weight:800}
+article.flash{outline:3px solid var(--d-accent);outline-offset:2px}
+@container (max-width:720px){.cal{grid-template-columns:repeat(7,minmax(0,1fr));gap:2px}.cal-d{min-height:56px;padding:2px}.chip b{display:none}}
+`
+);
+
 // src/widget/styles.ts
-var STYLES2 = (
+var STYLES3 = (
   /* css */
   `
 :host{--d-primary:#0b3f2f;--d-accent:#f3811d;--d-bg:#f5f7f6;--d-surface:#fff;--d-ink:#14211c;--d-muted:#5d6b65;--d-line:#dde5e1;--d-danger:#b42318;--d-ok:#1f7a45;
@@ -2078,7 +3063,7 @@ button[disabled]{opacity:.55;cursor:progress}
 .toast.error{background:var(--d-danger)}.toast.success{background:var(--d-ok)}
 .lock{max-width:420px;margin:10px auto}
 .post{display:grid;grid-template-columns:minmax(200px,300px) minmax(0,1fr);gap:18px;align-items:start}
-.post canvas{display:block;width:100%;height:auto;aspect-ratio:1080/1350;border-radius:12px;background:var(--d-line)}
+.post canvas{display:block;width:100%;height:auto;border-radius:12px;background:var(--d-line)}
 .post .head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:10px}
 .pill{font-size:.75rem;font-weight:700;border-radius:99px;padding:3px 10px;background:var(--d-line)}
 .pill.scheduled,.pill.published{background:color-mix(in srgb,var(--d-ok) 18%,#fff);color:var(--d-ok)}
@@ -2092,6 +3077,7 @@ button[disabled]{opacity:.55;cursor:progress}
 var MARK_SVG = `<svg class="mark" viewBox="0 0 100 100" aria-hidden="true"><defs><linearGradient id="dg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2fd3a0"/><stop offset="1" stop-color="#0b6b4f"/></linearGradient></defs><rect x="2" y="2" width="96" height="96" rx="26" fill="url(#dg)"/><path d="M12 80 C 30 72, 44 84, 60 78 S 82 70, 90 76" fill="none" stroke="#ffa124" stroke-width="4" stroke-linecap="round"/><g fill="#fff"><path d="M28 72 C 26 48, 44 28, 66 26 C 74 25.5, 80 28, 83 32.5 C 86 33.5, 90 34.5, 94 37 C 90 39.5, 85 40, 80 39.5 C 62 39, 45 50, 36 71 Z"/><path d="M45 32 C 46 24, 51 19, 58 16.5 C 55 22, 55 26.5, 57 29.5 Z"/><path d="M55 43 C 55 50, 52 55, 47 58 C 49 52, 50 47, 50 44 Z"/><path d="M32 68 C 27 74, 21 76, 15 75 C 20 72, 24 69, 27 65 Z"/><path d="M33 69 C 35 76, 34 82, 30 87 C 31 81, 30 76, 28 72 Z"/></g><circle cx="78.5" cy="33" r="2.1" fill="#0b5a43"/><g fill="#ffa124"><path d="M82 9 l2 5 5 2 -5 2 -2 5 -2 -5 -5 -2 5 -2z"/><circle cx="92" cy="20" r="2"/></g></svg>`;
 
 // src/widget/element.ts
+var IDLE_LOCK_MS = 15 * 6e4;
 var SUBJECTS = {
   mix: "a balanced mix: selling what is available, useful tips, trust and behind the scenes, what is coming soon",
   sell: "selling the products that are available now",
@@ -2129,7 +3115,8 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
   view = "loading";
   busy = false;
   t = MESSAGES.fr;
-  prefs = { subject: "mix", tone: "warm", count: 5, start: "", time: "19:00", notes: "", auto: true };
+  prefs = { subject: "mix", tone: "warm", count: 5, start: "", time: "19:00", notes: "", auto: true, c: { ...DEFAULT_CAMPAIGN } };
+  idleTimer;
   toastTimer;
   redraw = /* @__PURE__ */ new Map();
   /** Profile being reviewed before it is saved. */
@@ -2142,9 +3129,34 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
     this.root.addEventListener("click", (e) => void this.onClick(e));
     this.root.addEventListener("input", (e) => void this.onInput(e));
     this.root.addEventListener("change", (e) => {
-      if (e.target.hasAttribute?.("data-upload")) void this.onInput(e);
+      const el = e.target;
+      if (el.hasAttribute?.("data-upload") || el.hasAttribute?.("data-photo") || el.hasAttribute?.("data-import")) void this.onInput(e);
     });
     this.root.addEventListener("submit", (e) => void this.onSubmit(e));
+    for (const ev of ["pointerdown", "keydown"]) this.root.addEventListener(ev, () => this.armIdleLock(), { passive: true });
+  }
+  disconnectedCallback() {
+    clearTimeout(this.idleTimer);
+  }
+  /** Direct mode with the device vault: lock after 15 minutes without activity. */
+  armIdleLock() {
+    clearTimeout(this.idleTimer);
+    if (this.mode !== "direct" || this.hostManaged || this.view !== "main" || !this.cfg) return;
+    this.idleTimer = setTimeout(() => {
+      if (this.busy) {
+        this.armIdleLock();
+        return;
+      }
+      this.lock();
+      this.toast(this.t.autoLocked, "info");
+    }, IDLE_LOCK_MS);
+  }
+  lock() {
+    this.secrets = null;
+    this.passphrase = "";
+    this.studio.connect({ llm: void 0, publisher: void 0 });
+    this.view = "lock";
+    this.render();
   }
   connectedCallback() {
     if (this.cfg) return;
@@ -2178,6 +3190,9 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
   get model() {
     return this.cfg?.model ?? DEFAULT_MODEL;
   }
+  get uiLang() {
+    return this.cfg?.lang ?? this.studio?.brand.language ?? "fr";
+  }
   async init() {
     const cfg = this.cfg;
     const initial = cfg.brand ?? placeholderBrand(cfg);
@@ -2191,7 +3206,8 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
     await this.studio.load();
     this.applyBrandLook();
     try {
-      Object.assign(this.prefs, JSON.parse(await this.store.get("prefs") ?? "{}"));
+      const saved = JSON.parse(await this.store.get("prefs") ?? "{}");
+      Object.assign(this.prefs, saved, { c: { ...DEFAULT_CAMPAIGN, ...saved.c ?? {} } });
     } catch {
     }
     if (!this.prefs.start || new Date(this.prefs.start) < new Date((/* @__PURE__ */ new Date()).toDateString())) {
@@ -2236,9 +3252,15 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
     else if (this.view === "setup" || this.view === "lock") body = this.lockView();
     else {
       const st = this.studio;
-      body = (this.cfg.showConnections === false ? "" : this.connectionsView()) + siteCard({ t: this.t, brand: st.brand, locked: st.brandLocked, saved: st.hasSavedBrand, draft: this.draft, logoCandidates: this.logoCandidates, siteUrl: this.siteUrl, busy: this.busy, canAnalyze: st.canGenerate }) + (this.ready ? ideasCard(this.t, st.ideas, this.busy, st.canGenerate, st.canGenerate) + peakCard(this.t, st.peaks, this.busy) + this.generateView() + this.postsView() : "");
+      body = (this.cfg.showConnections === false ? "" : this.connectionsView()) + siteCard({ t: this.t, brand: st.brand, locked: st.brandLocked, saved: st.hasSavedBrand, draft: this.draft, logoCandidates: this.logoCandidates, siteUrl: this.siteUrl, busy: this.busy, canAnalyze: st.canGenerate }) + (this.ready ? ideasCard(this.t, st.ideas, this.busy, st.canGenerate, st.canGenerate) + peakCard(this.t, st.peaks, this.busy) + insightsCard(this.t, this.uiLang, st.insights, st.importedData, this.busy) + this.generateView() + calendarCard(this.t, this.uiLang, st.list(), /* @__PURE__ */ new Date()) + this.postsView() : "");
     }
-    this.root.innerHTML = `<style>${STYLES2}${PROFILE_STYLES}</style><div class="wrap">${head}<div class="toast" role="status" hidden></div>${body}</div>`;
+    const open = new Set([...this.root.querySelectorAll("details[data-k]")].map((d) => [d.dataset.k, d.open]).filter(([, o]) => o).map(([k]) => k));
+    const closed = new Set([...this.root.querySelectorAll("details[data-k]")].filter((d) => !d.open).map((d) => d.dataset.k));
+    this.root.innerHTML = `<style>${STYLES3}${PROFILE_STYLES}${INSIGHTS_STYLES}${PLANNER_STYLES}</style><div class="wrap">${head}<div class="toast" role="status" hidden></div>${body}</div>`;
+    this.root.querySelectorAll("details[data-k]").forEach((d) => {
+      if (open.has(d.dataset.k)) d.open = true;
+      else if (closed.has(d.dataset.k)) d.open = false;
+    });
     this.drawAll();
   }
   lockView() {
@@ -2277,6 +3299,7 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
       <label><span>${esc2(t.time)}</span><input type="time" data-pref="time" value="${esc2(p.time)}"${p.auto ? " disabled" : ""}></label></div>
       <label class="check"><input type="checkbox" data-pref="auto"${p.auto ? " checked" : ""}><span>\u23F1 ${esc2(t.autoTime)}</span></label>
       <label><span>${esc2(t.notes)}</span><textarea rows="2" data-pref="notes" placeholder="${esc2(t.notesPh)}">${esc2(p.notes)}</textarea></label>
+      ${campaignFields(t, p.c)}
       <p class="hint">${esc2(fill(t.costHint, { cost: usd(estimatePerPostUsd(this.model)) }))}</p>
       <div class="row"><button class="accent" data-act="generate"${this.busy || !this.studio.canGenerate ? " disabled" : ""}>${esc2(this.busy ? t.generating : "\u2726 " + t.generate)}</button></div></div>`;
   }
@@ -2284,27 +3307,34 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
     const t = this.t, posts = this.studio.list();
     const canPublish = this.studio.canPublish;
     const bulk = posts.length ? `<div class="row" style="margin-bottom:12px">${canPublish ? `<button class="primary" data-act="schedule-all"${this.busy ? " disabled" : ""}>${esc2(t.scheduleAll)}</button>` : ""}
+      <button data-act="export-csv">${esc2(t.exportCsv)}</button>
       <button class="danger" data-act="clear" data-confirm>${esc2(t.clearAll)}</button></div>` : `<p class="empty">${esc2(t.empty)}</p>`;
     return `<h3>${esc2(t.posts)}${posts.length ? ` (${posts.length})` : ""}</h3>${bulk}${posts.map((p, i) => this.postCard(p, i, canPublish)).join("")}`;
   }
   postCard(p, i, canPublish) {
-    const t = this.t, editable = p.status === "draft" || p.status === "failed";
+    const t = this.t, editable = (p.status === "draft" || p.status === "failed") && !this.studio.isSending(p.id);
     const ro = editable ? "" : " disabled";
-    const field = (k, label) => `<label><span>${esc2(label)}</span><input data-f="${p.id}:${k}" value="${esc2(p[k])}"${ro}></label>`;
-    const sel = (k, label, o) => `<label><span>${esc2(label)}</span><select data-f="${p.id}:${k}"${ro}>${Object.entries(o).map(([v, l]) => `<option value="${v}"${p[k] === v ? " selected" : ""}>${esc2(l)}</option>`).join("")}</select></label>`;
-    return `<article class="card"><div class="head"><strong>${i + 1}. ${esc2(p.title)}</strong><span class="pill ${p.status}">${esc2(t.status[p.status])}</span></div>
-      <div class="post"><canvas width="1080" height="1350" data-canvas="${p.id}" role="img" aria-label="${esc2(p.title)}"></canvas><div>
+    const id = esc2(p.id);
+    const field = (k, label) => `<label><span>${esc2(label)}</span><input data-f="${id}:${k}" value="${esc2(p[k])}"${ro}></label>`;
+    const sel = (k, label, o) => `<label><span>${esc2(label)}</span><select data-f="${id}:${k}"${ro}>${Object.entries(o).map(([v, l]) => `<option value="${esc2(v)}"${p[k] === v ? " selected" : ""}>${esc2(l)}</option>`).join("")}</select></label>`;
+    const { width, height } = sizeOf(p.design);
+    return `<article class="card" data-post="${id}"><div class="head"><strong>${i + 1}. ${esc2(p.title)}</strong><span class="pill ${esc2(p.status)}">${esc2(t.status[p.status])}</span></div>
+      <div class="post"><canvas width="${width}" height="${height}" data-canvas="${id}" role="img" aria-label="${esc2(p.title)}"></canvas><div>
       ${p.error ? `<p class="err">${esc2(p.errorCode ? t.errors[p.errorCode] : p.error)}</p>` : ""}
       <div class="grid">${field("tag", t.tag)}${sel("theme", t.theme, t.themes)}</div>
       ${field("title", t.title)}${field("subtitle", t.subtitle)}
       <div class="grid"><label><span>${esc2(t.points)}</span><textarea rows="4" data-f="${p.id}:points"${ro}>${esc2(p.points.join("\n"))}</textarea></label>${sel("style", t.style, t.styles)}</div>
       <label><span>${esc2(t.caption)}</span><textarea rows="6" data-f="${p.id}:caption"${ro}>${esc2(p.caption)}</textarea></label>
       <label><span>${esc2(t.hashtags)}</span><input data-f="${p.id}:hashtags" value="${esc2(p.hashtags.map((h) => "#" + h).join(" "))}"${ro}></label>
-      <label><span>${esc2(t.when)}</span><input type="datetime-local" data-f="${p.id}:scheduledAt" value="${esc2(toLocalInput(new Date(p.scheduledAt)))}"${ro}></label>
-      <div class="row"><button data-act="download" data-id="${p.id}">${esc2(t.download)}</button><button data-act="copy" data-id="${p.id}">${esc2(t.copy)}</button>
-      ${canPublish && editable ? `<button class="primary" data-act="schedule" data-id="${p.id}"${this.busy ? " disabled" : ""}>${esc2(t.schedule)}</button>
-        <button class="accent" data-act="publish" data-id="${p.id}"${this.busy ? " disabled" : ""}>${esc2(t.publishNow)}</button>` : ""}
-      <button class="danger" data-act="remove" data-id="${p.id}" data-confirm>${esc2(t.remove)}</button></div></div></div></article>`;
+      <label><span>${esc2(t.when)}</span><input type="datetime-local" data-f="${id}:scheduledAt" value="${esc2(toLocalInput(new Date(p.scheduledAt)))}"${ro}></label>
+      ${designFields(t, p, editable)}
+      <div class="row"><button data-act="download" data-id="${id}">${esc2(t.download)}</button><button data-act="download-jpg" data-id="${id}">${esc2(t.downloadJpg)}</button>
+      <button data-act="copy" data-id="${id}">${esc2(t.copy)}</button>
+      <button data-act="duplicate" data-id="${id}">${esc2(t.duplicate)}</button>
+      ${(p.design?.format ?? "portrait") !== "story" ? `<button data-act="story" data-id="${id}">${esc2(t.makeStory)}</button>` : ""}
+      ${canPublish && editable ? `<button class="primary" data-act="schedule" data-id="${id}"${this.busy ? " disabled" : ""}>${esc2(t.schedule)}</button>
+        <button class="accent" data-act="publish" data-id="${id}"${this.busy ? " disabled" : ""}>${esc2(t.publishNow)}</button>` : ""}
+      <button class="danger" data-act="remove" data-id="${id}" data-confirm>${esc2(t.remove)}</button></div></div></div></article>`;
   }
   drawAll() {
     this.root.querySelectorAll("canvas[data-canvas]").forEach((c) => this.drawOne(c));
@@ -2355,6 +3385,7 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
     this.applySecrets();
     this.view = "main";
     this.render();
+    this.armIdleLock();
   }
   applySecrets() {
     const factory = _DolphinStudioElement.directFactory;
@@ -2362,7 +3393,58 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
     this.studio.connect({ llm: adapters.llm, publisher: adapters.publisher });
   }
   async onInput(e) {
+    try {
+      await this.handleInput(e);
+    } catch (err) {
+      this.toast(this.errorText(err), "error");
+    }
+  }
+  async handleInput(e) {
     const el = e.target;
+    if (el.hasAttribute("data-import")) {
+      const file = el.files?.[0];
+      if (e.type !== "change" || !file) return;
+      el.value = "";
+      if (file.size > MAX_CSV_BYTES) {
+        this.toast(this.t.importBad, "error");
+        return;
+      }
+      this.busy = true;
+      this.render();
+      try {
+        const r = await this.studio.importCsv(await file.text(), file.name);
+        this.busy = false;
+        this.render();
+        this.toast(fill(this.t.imported, { n: r.samples.length, kind: this.t.importKinds[r.kind] }), "success");
+      } catch {
+        this.busy = false;
+        this.render();
+        this.toast(this.t.importBad, "error");
+      }
+      return;
+    }
+    if (el.dataset.photo) {
+      const file = el.files?.[0];
+      if (e.type !== "change" || !file) return;
+      let photo;
+      try {
+        photo = await photoFromFile(file);
+      } catch {
+        this.toast(this.t.badPhoto, "error");
+        return;
+      }
+      await this.studio.update(el.dataset.photo, { design: { photo } });
+      this.render();
+      return;
+    }
+    if (el.dataset.d) {
+      const [id2, key2] = el.dataset.d.split(":");
+      const value2 = key2 === "hideLogo" ? el.checked : key2 === "overlay" ? Number(el.value) : el.value;
+      await this.studio.update(id2, { design: { [key2]: value2 } });
+      if (key2 === "format") this.render();
+      else this.scheduleRedraw(id2);
+      return;
+    }
     if (el.hasAttribute("data-site-url")) {
       this.siteUrl = el.value.trim();
       return;
@@ -2392,6 +3474,12 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
       }
       return;
     }
+    if (el.dataset.pref?.startsWith("c.")) {
+      const k = el.dataset.pref.slice(2);
+      this.prefs.c[k] = el.value;
+      await this.store.set("prefs", JSON.stringify(this.prefs));
+      return;
+    }
     if (el.dataset.pref) {
       const k = el.dataset.pref;
       this.prefs[k] = k === "auto" ? el.checked : k === "count" ? Math.min(10, Math.max(1, Number.parseInt(el.value, 10) || 1)) : el.value;
@@ -2406,9 +3494,19 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
     if (!f) return;
     const [id, key] = f.split(":");
     const v = el.value;
-    const value = key === "points" ? v.split("\n").map((x) => x.trim()).filter(Boolean) : key === "hashtags" ? v.split(/[\s,]+/).map((x) => x.replace(/^#+/, "")).filter(Boolean) : key === "scheduledAt" ? v ? new Date(v).toISOString() : void 0 : v;
-    if (value === void 0) return;
+    if (key === "link" && v.trim() && !safeLink(v)) {
+      el.setCustomValidity(this.t.badLink);
+      el.reportValidity();
+      return;
+    }
+    el.setCustomValidity?.("");
+    const scheduled = key === "scheduledAt" ? new Date(v) : null;
+    if (scheduled && Number.isNaN(scheduled.getTime())) return;
+    const value = key === "points" ? v.split("\n").map((x) => x.trim()).filter(Boolean) : key === "hashtags" ? v.split(/[\s,]+/).map((x) => x.replace(/^#+/, "")).filter(Boolean) : scheduled ? scheduled.toISOString() : v;
     await this.studio.update(id, { [key]: value });
+    this.scheduleRedraw(id);
+  }
+  scheduleRedraw(id) {
     clearTimeout(this.redraw.get(id));
     this.redraw.set(id, setTimeout(() => {
       const c = this.root.querySelector(`canvas[data-canvas="${CSS.escape(id)}"]`);
@@ -2435,11 +3533,8 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
     try {
       switch (b.dataset.act) {
         case "lock":
-          this.secrets = null;
-          this.passphrase = "";
-          studio.connect({ llm: void 0, publisher: void 0 });
-          this.view = "lock";
-          this.render();
+          clearTimeout(this.idleTimer);
+          this.lock();
           break;
         case "forget":
           await this.vault.reset();
@@ -2505,6 +3600,39 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
         case "download":
           await this.download(id);
           break;
+        case "download-jpg":
+          await this.download(id, "image/jpeg");
+          break;
+        case "duplicate":
+          await studio.duplicate(id);
+          this.render();
+          this.toast(this.t.duplicated, "success");
+          break;
+        case "story": {
+          const copy = await studio.duplicate(id, { format: "story" });
+          this.render();
+          this.goto(copy.id);
+          this.toast(this.t.duplicated, "success");
+          break;
+        }
+        case "no-photo":
+          await studio.update(id, { design: { photo: "" } });
+          this.render();
+          break;
+        case "goto":
+          this.goto(id);
+          break;
+        case "export-csv":
+          this.save(new Blob([studio.exportCsv()], { type: "text/csv;charset=utf-8" }), `dolphin-plan-${(/* @__PURE__ */ new Date()).toISOString().slice(0, 10)}.csv`);
+          break;
+        case "clear-import": {
+          this.busy = true;
+          this.render();
+          await studio.clearImport();
+          this.busy = false;
+          this.render();
+          break;
+        }
         case "copy":
           await navigator.clipboard.writeText(studio.caption(id));
           this.toast(this.t.copied, "success");
@@ -2564,16 +3692,21 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
     this.toast(parts.join(" \u2014 "), ok ? "success" : "error");
   }
   async generate() {
+    const p = this.prefs;
+    if (p.c.link.trim() && !safeLink(p.c.link)) {
+      this.toast(this.t.badLink, "error");
+      return;
+    }
     this.busy = true;
     this.render();
-    const p = this.prefs;
     const { posts, usage, model } = await this.studio.generate({
       count: p.count,
       subject: SUBJECTS[p.subject] ?? SUBJECTS.mix,
       tone: TONES[p.tone] ?? TONES.warm,
       ...p.notes ? { notes: p.notes } : {},
       ...p.start ? { startDate: /* @__PURE__ */ new Date(p.start + "T00:00") } : {},
-      time: p.auto ? "auto" : p.time
+      time: p.auto ? "auto" : p.time,
+      ...this.campaignOptions()
     });
     this.busy = false;
     this.render();
@@ -2656,19 +3789,46 @@ var DolphinStudioElement = class _DolphinStudioElement extends HTMLElement {
       tone: TONES[this.prefs.tone] ?? TONES.warm,
       notes: idea.why,
       ...this.prefs.start ? { startDate: /* @__PURE__ */ new Date(this.prefs.start + "T00:00") } : {},
-      time: this.prefs.auto ? "auto" : this.prefs.time
+      time: this.prefs.auto ? "auto" : this.prefs.time,
+      ...this.campaignOptions()
     });
     this.busy = false;
     this.render();
     this.toast(fill(this.t.generated, { n: posts.length, cost: usd(estimateCostUsd(usage, model)) }), "success");
   }
-  async download(id) {
-    const blob = await this.studio.renderImage(id);
+  /** Campaign and design choices of the "Create" card, as generation options. */
+  campaignOptions() {
+    const c = this.prefs.c;
+    const link = safeLink(c.link);
+    return {
+      objective: c.objective,
+      ...c.audience.trim() ? { audience: c.audience.trim().slice(0, 200) } : {},
+      ...c.offer.trim() ? { offer: c.offer.trim().slice(0, 500) } : {},
+      ...c.campaign.trim() ? { campaign: c.campaign.trim() } : {},
+      ...link ? { link } : {},
+      design: { ...c.format !== "portrait" ? { format: c.format } : {}, ...c.layout !== "classic" ? { layout: c.layout } : {} }
+    };
+  }
+  async download(id, type = "image/png") {
+    const post = this.studio.get(id);
+    if (!post) return;
+    const blob = type === "image/png" ? await this.studio.renderImage(id) : await this.renderer.export(post, this.studio.brand, type);
+    this.save(blob, `dolphin-${id.slice(0, 8)}-${post.design?.format ?? "portrait"}.${type === "image/png" ? "png" : "jpg"}`);
+  }
+  save(blob, name) {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `dolphin-${id.slice(0, 8)}.png`;
+    a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1e3);
+  }
+  /** Scrolls to a post card and highlights it for a moment. */
+  goto(id) {
+    const card = this.root.querySelector(`article[data-post="${CSS.escape(id)}"]`);
+    if (!card) return;
+    card.scrollIntoView({ behavior: "smooth", block: "start" });
+    card.classList.add("flash");
+    setTimeout(() => card.classList.remove("flash"), 1600);
   }
   async sendPosts(ids, schedule) {
     this.busy = true;
@@ -2717,15 +3877,21 @@ export {
   MODEL_PRICING,
   MemoryStore,
   MetaPagePublisher,
+  OBJECTIVES,
   POSTER_HEIGHT,
+  POSTER_SIZES,
   POSTER_WIDTH,
   POSTS_JSON_SCHEMA,
   Vault,
+  analyzeInsights,
   analyzePeaks,
+  appSecretProof,
   assertSchedulable,
   buildAnalyzePrompt,
   buildSystemPrompt,
   buildUserPrompt,
+  calendarWeeks,
+  captionWithLink,
   colorsFromImage,
   contrast,
   defineDolphinElement,
@@ -2735,17 +3901,24 @@ export {
   estimateCostUsd,
   estimatePerPostUsd,
   fullCaption,
+  importEngagementCsv,
   isDolphinError,
+  mergeSources,
   mount,
   paletteFor,
   parseAnalysis,
+  parseCsv,
   parseDrafts,
   pickBrandColors,
   planSchedule,
+  planToCsv,
   planWithPeaks,
+  sanitizeDesign,
+  sanitizePost,
   snapshotFromDocument,
   validateBrand,
   validateGenerateRequest,
-  validateSnapshot
+  validateSnapshot,
+  withUtm
 };
 //# sourceMappingURL=dolphin.esm.js.map

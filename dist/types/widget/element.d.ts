@@ -49,6 +49,7 @@ export declare class DolphinStudioElement extends HTMLElement {
     private busy;
     private t;
     private prefs;
+    private idleTimer;
     private toastTimer;
     private redraw;
     /** Profile being reviewed before it is saved. */
@@ -56,12 +57,17 @@ export declare class DolphinStudioElement extends HTMLElement {
     private logoCandidates;
     private siteUrl;
     constructor();
+    disconnectedCallback(): void;
+    /** Direct mode with the device vault: lock after 15 minutes without activity. */
+    private armIdleLock;
+    private lock;
     connectedCallback(): void;
     get config(): DolphinConfig | undefined;
     set config(value: DolphinConfig);
     private get mode();
     private get hostManaged();
     private get model();
+    private get uiLang();
     private init;
     /** The interface takes the colors of the current brand. */
     private applyBrandLook;
@@ -80,6 +86,8 @@ export declare class DolphinStudioElement extends HTMLElement {
     private unlocked;
     private applySecrets;
     private onInput;
+    private handleInput;
+    private scheduleRedraw;
     private onClick;
     private saveKeys;
     private testConnections;
@@ -89,7 +97,12 @@ export declare class DolphinStudioElement extends HTMLElement {
     private pickLogo;
     private saveProfile;
     private writeIdea;
+    /** Campaign and design choices of the "Create" card, as generation options. */
+    private campaignOptions;
     private download;
+    private save;
+    /** Scrolls to a post card and highlights it for a moment. */
+    private goto;
     private sendPosts;
 }
 export declare function defineDolphinElement(tag?: string): void;

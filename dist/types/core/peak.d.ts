@@ -8,6 +8,11 @@ export interface EngagementSample {
     reactions: number;
     comments: number;
     shares: number;
+    /** Ready-made score (e.g. ad results or clicks from an import). Replaces the weighted engagement. */
+    score?: number;
+    /** First words of the post, to show the top posts. */
+    message?: string;
+    url?: string;
 }
 export interface PeakSlot {
     /** 0 = Monday … 6 = Sunday */
@@ -17,7 +22,8 @@ export interface PeakSlot {
     score: number;
 }
 export interface PeakReport {
-    source: "page" | "default";
+    /** page: the page's own posts; import: a file the user imported; mixed: both; default: general habits. */
+    source: "page" | "import" | "mixed" | "default";
     /** Number of posts the report is based on. */
     samples: number;
     /** grid[day][hour], 0..1 */
@@ -28,6 +34,9 @@ export interface PeakReport {
     bestHourByDay: number[];
 }
 export declare const MIN_SAMPLES = 8;
-export declare function analyzePeaks(samples: readonly EngagementSample[], minSamples?: number): PeakReport;
+/** Engagement of one post: a comment counts double and a share triple. */
+export declare const weight: (s: EngagementSample) => number;
+export declare const mondayFirst: (d: Date) => number;
+export declare function analyzePeaks(samples: readonly EngagementSample[], minSamples?: number, from?: Exclude<PeakReport["source"], "default">): PeakReport;
 /** One slot per post from `start`, every `everyDays` days, each at that weekday's best hour. */
 export declare function planWithPeaks(count: number, start: Date, report: PeakReport, everyDays?: number): Date[];

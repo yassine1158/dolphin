@@ -86,7 +86,7 @@ export function peakCard(t: Messages, report: PeakReport | null, busy: boolean):
       const label = `${day} ${hour(from)}–${hour(from + 3)} : ${Math.round(v * 100)} %`;
       return `<span class="hm-cell" style="background:${HEAT[step]}" title="${esc(label)}" aria-label="${esc(label)}" role="img"></span>`;
     }).join("")}</div>`).join("");
-    body += `<p class="state ${report.source === "page" ? "ok" : "missing"}">${esc(report.source === "page" ? t.peakFromPage.replace("{n}", String(report.samples)) : t.peakDefault)}</p>
+    body += `<p class="state ${report.source === "default" ? "missing" : "ok"}">${esc(({ page: t.peakFromPage, import: t.peakFromImport, mixed: t.peakMixed, default: t.peakDefault }[report.source] ?? t.peakDefault).replace("{n}", String(report.samples)))}</p>
       <div class="peaks"><div><h4>${esc(t.peakBest)}</h4><ol class="best">${report.best.map(b => `<li><strong>${esc(t.days[b.day])}</strong> · ${esc(hour(b.hour))}</li>`).join("")}</ol></div>
       <div class="hm" role="group" aria-label="${esc(t.peakTitle)}"><div class="hm-row hm-head"><span class="hm-day"></span>${BLOCKS.map(h => `<span>${esc(hour(h))}</span>`).join("")}</div>${rows}
       <div class="hm-legend"><span>${esc(t.peakLess)}</span>${HEAT.map(c => `<i style="background:${c}"></i>`).join("")}<span>${esc(t.peakMore)}</span></div></div></div>`;

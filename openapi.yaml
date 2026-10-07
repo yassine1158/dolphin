@@ -1,12 +1,15 @@
 openapi: 3.1.0
 info:
   title: DOLPHin API
-  version: 0.3.0
+  version: 0.4.0
   description: |
     Contract between the <dolphin-studio> widget (proxy mode) and a server that holds the keys.
     The reference implementation is `dolphin-server` (Node). Any backend (PHP, Python, Java, Go, .NET…)
     can implement these six routes to host DOLPHin.
     Errors always have the shape `{ "error": { "code": ErrorCode, "message": string } }`.
+    Every POST body is `application/json` (415 otherwise). Clients are rate limited per IP (429 with
+    `Retry-After: 60`): 20 requests per minute on /v1/generate and /v1/analyze, 120 on the other routes.
+    A browser from an origin that is not allowed gets 403. The token is never accepted in the query string.
 servers:
   - url: http://localhost:8787
 security:
@@ -196,6 +199,9 @@ components:
         tone: { type: string }
         notes: { type: string }
         avoidTitles: { type: array, items: { type: string } }
+        objective: { type: string, enum: [awareness, engagement, traffic, leads, sales, event] }
+        audience: { type: string, maxLength: 200, description: Audience of this campaign when it differs from the brand audience. }
+        offer: { type: string, maxLength: 500, description: Offer or event of the campaign; the model uses only these facts. }
     PostDraft:
       type: object
       required: [tag, title, subtitle, points, style, theme, caption, hashtags]

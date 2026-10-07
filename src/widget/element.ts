@@ -5,6 +5,8 @@ import { discoverSite, snapshotFromDocument } from "../adapters/site.js";
 import { Vault, type StudioSecrets } from "../adapters/secrets/vault.js";
 import { LocalStore } from "../adapters/storage/index.js";
 import { DolphinStudio, type StudioDeps } from "../app/studio.js";
+import { MAX_CSV_BYTES } from "../core/csv.js";
+import { safeLink, sizeOf } from "../core/design.js";
 import { validateBrand } from "../core/brand.js";
 import { DEFAULT_MODEL, estimatePerPostUsd, estimateCostUsd } from "../core/cost.js";
 import { isDolphinError } from "../core/errors.js";
@@ -13,7 +15,9 @@ import type { BrandProfile, Lang, Post, Product } from "../core/types.js";
 import { DEFAULT_COLORS } from "../render/colors.js";
 import { CanvasPosterRenderer, type PosterFonts } from "../render/poster.js";
 import { MESSAGES, fill, type Messages } from "./i18n.js";
-import { chooseLogo, logoFromFile } from "./logo.js";
+import { INSIGHTS_STYLES, insightsCard } from "./insights.js";
+import { chooseLogo, logoFromFile, photoFromFile } from "./logo.js";
+import { DEFAULT_CAMPAIGN, PLANNER_STYLES, calendarCard, campaignFields, designFields, type CampaignPrefs } from "./planner.js";
 import { PROFILE_STYLES, ideasCard, peakCard, siteCard } from "./profile.js";
 import { MARK_SVG, STYLES } from "./styles.js";
 
@@ -52,7 +56,10 @@ export interface DolphinConfig {
 export type DirectFactory = (secrets: StudioSecrets, config: DolphinConfig) => Pick<StudioDeps, "llm" | "publisher">;
 
 type View = "loading" | "setup" | "lock" | "main";
-interface Prefs { subject: string; tone: string; count: number; start: string; time: string; notes: string; auto: boolean }
+interface Prefs { subject: string; tone: string; count: number; start: string; time: string; notes: string; auto: boolean; c: CampaignPrefs }
+
+/** Direct mode: the vault locks itself after this much time without any click or key press. */
+const IDLE_LOCK_MS = 15 * 60_000;
 
 /** Instructions sent to the model for each subject / tone choice. */
 const SUBJECTS: Record<string, string> = {
@@ -95,7 +102,8 @@ export class DolphinStudioElement extends HTMLElement {
   private view: View = "loading";
   private busy = false;
   private t: Messages = MESSAGES.fr;
-  private prefs: Prefs = { subject: "mix", tone: "warm", count: 5, start: "", time: "19:00", notes: "", auto: true };
+  private prefs: Prefs = { subject: "mix", tone: "warm", count: 5, start: "", time: "19:00", notes: "", auto: true, c: { ...DEFAULT_CAMPAIGN } };
+  private idleTimer: ReturnType<typeof setTimeout> | undefined;
   private toastTimer: ReturnType<typeof setTimeout> | undefined;
   private redraw = new Map<string, ReturnType<typeof setTimeout>>();
   /** Profile being reviewed before it is saved. */
@@ -108,8 +116,31 @@ export class DolphinStudioElement extends HTMLElement {
     this.root = this.attachShadow({ mode: "open" });
     this.root.addEventListener("click", e => void this.onClick(e));
     this.root.addEventListener("input", e => void this.onInput(e));
-    this.root.addEventListener("change", e => { if ((e.target as HTMLElement).hasAttribute?.("data-upload")) void this.onInput(e); });
+    this.root.addEventListener("change", e => {
+      const el = e.target as HTMLElement;
+      if (el.hasAttribute?.("data-upload") || el.hasAttribute?.("data-photo") || el.hasAttribute?.("data-import")) void this.onInput(e);
+    });
     this.root.addEventListener("submit", e => void this.onSubmit(e));
+    for (const ev of ["pointerdown", "keydown"]) this.root.addEventListener(ev, () => this.armIdleLock(), { passive: true });
+  }
+
+  disconnectedCallback(): void { clearTimeout(this.idleTimer); }
+
+  /** Direct mode with the device vault: lock after 15 minutes without activity. */
+  private armIdleLock(): void {
+    clearTimeout(this.idleTimer);
+    if (this.mode !== "direct" || this.hostManaged || this.view !== "main" || !this.cfg) return;
+    this.idleTimer = setTimeout(() => {
+      if (this.busy) { this.armIdleLock(); return; }
+      this.lock();
+      this.toast(this.t.autoLocked, "info");
+    }, IDLE_LOCK_MS);
+  }
+
+  private lock(): void {
+    this.secrets = null; this.passphrase = "";
+    this.studio!.connect({ llm: undefined, publisher: undefined });
+    this.view = "lock"; this.render();
   }
 
   connectedCallback(): void {
@@ -135,6 +166,7 @@ export class DolphinStudioElement extends HTMLElement {
   private get mode(): "proxy" | "direct" { return this.cfg!.mode ?? (this.cfg!.endpoint ? "proxy" : "direct"); }
   private get hostManaged(): boolean { return this.mode === "direct" && !!this.cfg?.secrets; }
   private get model(): string { return this.cfg?.model ?? DEFAULT_MODEL; }
+  private get uiLang(): Lang { return this.cfg?.lang ?? this.studio?.brand.language ?? "fr"; }
 
   private async init(): Promise<void> {
     const cfg = this.cfg!;
@@ -148,7 +180,10 @@ export class DolphinStudioElement extends HTMLElement {
     this.studio = new DolphinStudio({ brand: initial, brandLocked: !!cfg.brand, renderer: this.renderer, store: this.store });
     await this.studio.load();
     this.applyBrandLook();
-    try { Object.assign(this.prefs, JSON.parse((await this.store.get("prefs")) ?? "{}")); } catch { /* defaults */ }
+    try {
+      const saved = JSON.parse((await this.store.get("prefs")) ?? "{}") as Partial<Prefs>;
+      Object.assign(this.prefs, saved, { c: { ...DEFAULT_CAMPAIGN, ...(saved.c ?? {}) } });
+    } catch { /* defaults */ }
     if (!this.prefs.start || new Date(this.prefs.start) < new Date(new Date().toDateString())) {
       this.prefs.start = toLocalInput(new Date(Date.now() + 86_400_000)).slice(0, 10);
     }
@@ -195,9 +230,17 @@ export class DolphinStudioElement extends HTMLElement {
       const st = this.studio!;
       body = (this.cfg!.showConnections === false ? "" : this.connectionsView())
         + siteCard({ t: this.t, brand: st.brand, locked: st.brandLocked, saved: st.hasSavedBrand, draft: this.draft, logoCandidates: this.logoCandidates, siteUrl: this.siteUrl, busy: this.busy, canAnalyze: st.canGenerate })
-        + (this.ready ? ideasCard(this.t, st.ideas, this.busy, st.canGenerate, st.canGenerate) + peakCard(this.t, st.peaks, this.busy) + this.generateView() + this.postsView() : "");
+        + (this.ready ? ideasCard(this.t, st.ideas, this.busy, st.canGenerate, st.canGenerate) + peakCard(this.t, st.peaks, this.busy)
+          + insightsCard(this.t, this.uiLang, st.insights, st.importedData, this.busy) + this.generateView()
+          + calendarCard(this.t, this.uiLang, st.list(), new Date()) + this.postsView() : "");
     }
-    this.root.innerHTML = `<style>${STYLES}${PROFILE_STYLES}</style><div class="wrap">${head}<div class="toast" role="status" hidden></div>${body}</div>`;
+    // panels the user opened stay open across re-renders
+    const open = new Set([...this.root.querySelectorAll<HTMLDetailsElement>("details[data-k]")].map(d => [d.dataset.k!, d.open] as const).filter(([, o]) => o).map(([k]) => k));
+    const closed = new Set([...this.root.querySelectorAll<HTMLDetailsElement>("details[data-k]")].filter(d => !d.open).map(d => d.dataset.k!));
+    this.root.innerHTML = `<style>${STYLES}${PROFILE_STYLES}${INSIGHTS_STYLES}${PLANNER_STYLES}</style><div class="wrap">${head}<div class="toast" role="status" hidden></div>${body}</div>`;
+    this.root.querySelectorAll<HTMLDetailsElement>("details[data-k]").forEach(d => {
+      if (open.has(d.dataset.k!)) d.open = true; else if (closed.has(d.dataset.k!)) d.open = false;
+    });
     this.drawAll();
   }
 
@@ -239,6 +282,7 @@ export class DolphinStudioElement extends HTMLElement {
       <label><span>${esc(t.time)}</span><input type="time" data-pref="time" value="${esc(p.time)}"${p.auto ? " disabled" : ""}></label></div>
       <label class="check"><input type="checkbox" data-pref="auto"${p.auto ? " checked" : ""}><span>⏱ ${esc(t.autoTime)}</span></label>
       <label><span>${esc(t.notes)}</span><textarea rows="2" data-pref="notes" placeholder="${esc(t.notesPh)}">${esc(p.notes)}</textarea></label>
+      ${campaignFields(t, p.c)}
       <p class="hint">${esc(fill(t.costHint, { cost: usd(estimatePerPostUsd(this.model)) }))}</p>
       <div class="row"><button class="accent" data-act="generate"${this.busy || !this.studio!.canGenerate ? " disabled" : ""}>${esc(this.busy ? t.generating : "✦ " + t.generate)}</button></div></div>`;
   }
@@ -247,29 +291,36 @@ export class DolphinStudioElement extends HTMLElement {
     const t = this.t, posts = this.studio!.list();
     const canPublish = this.studio!.canPublish;
     const bulk = posts.length ? `<div class="row" style="margin-bottom:12px">${canPublish ? `<button class="primary" data-act="schedule-all"${this.busy ? " disabled" : ""}>${esc(t.scheduleAll)}</button>` : ""}
+      <button data-act="export-csv">${esc(t.exportCsv)}</button>
       <button class="danger" data-act="clear" data-confirm>${esc(t.clearAll)}</button></div>` : `<p class="empty">${esc(t.empty)}</p>`;
     return `<h3>${esc(t.posts)}${posts.length ? ` (${posts.length})` : ""}</h3>${bulk}${posts.map((p, i) => this.postCard(p, i, canPublish)).join("")}`;
   }
 
   private postCard(p: Post, i: number, canPublish: boolean): string {
-    const t = this.t, editable = p.status === "draft" || p.status === "failed";
+    const t = this.t, editable = (p.status === "draft" || p.status === "failed") && !this.studio!.isSending(p.id);
     const ro = editable ? "" : " disabled";
-    const field = (k: keyof Post, label: string) => `<label><span>${esc(label)}</span><input data-f="${p.id}:${k}" value="${esc(p[k])}"${ro}></label>`;
+    const id = esc(p.id);
+    const field = (k: keyof Post, label: string) => `<label><span>${esc(label)}</span><input data-f="${id}:${k}" value="${esc(p[k])}"${ro}></label>`;
     const sel = (k: "theme" | "style", label: string, o: Record<string, string>) =>
-      `<label><span>${esc(label)}</span><select data-f="${p.id}:${k}"${ro}>${Object.entries(o).map(([v, l]) => `<option value="${v}"${p[k] === v ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
-    return `<article class="card"><div class="head"><strong>${i + 1}. ${esc(p.title)}</strong><span class="pill ${p.status}">${esc(t.status[p.status])}</span></div>
-      <div class="post"><canvas width="1080" height="1350" data-canvas="${p.id}" role="img" aria-label="${esc(p.title)}"></canvas><div>
+      `<label><span>${esc(label)}</span><select data-f="${id}:${k}"${ro}>${Object.entries(o).map(([v, l]) => `<option value="${esc(v)}"${p[k] === v ? " selected" : ""}>${esc(l)}</option>`).join("")}</select></label>`;
+    const { width, height } = sizeOf(p.design);
+    return `<article class="card" data-post="${id}"><div class="head"><strong>${i + 1}. ${esc(p.title)}</strong><span class="pill ${esc(p.status)}">${esc(t.status[p.status])}</span></div>
+      <div class="post"><canvas width="${width}" height="${height}" data-canvas="${id}" role="img" aria-label="${esc(p.title)}"></canvas><div>
       ${p.error ? `<p class="err">${esc(p.errorCode ? t.errors[p.errorCode] : p.error)}</p>` : ""}
       <div class="grid">${field("tag", t.tag)}${sel("theme", t.theme, t.themes)}</div>
       ${field("title", t.title)}${field("subtitle", t.subtitle)}
       <div class="grid"><label><span>${esc(t.points)}</span><textarea rows="4" data-f="${p.id}:points"${ro}>${esc(p.points.join("\n"))}</textarea></label>${sel("style", t.style, t.styles)}</div>
       <label><span>${esc(t.caption)}</span><textarea rows="6" data-f="${p.id}:caption"${ro}>${esc(p.caption)}</textarea></label>
       <label><span>${esc(t.hashtags)}</span><input data-f="${p.id}:hashtags" value="${esc(p.hashtags.map(h => "#" + h).join(" "))}"${ro}></label>
-      <label><span>${esc(t.when)}</span><input type="datetime-local" data-f="${p.id}:scheduledAt" value="${esc(toLocalInput(new Date(p.scheduledAt)))}"${ro}></label>
-      <div class="row"><button data-act="download" data-id="${p.id}">${esc(t.download)}</button><button data-act="copy" data-id="${p.id}">${esc(t.copy)}</button>
-      ${canPublish && editable ? `<button class="primary" data-act="schedule" data-id="${p.id}"${this.busy ? " disabled" : ""}>${esc(t.schedule)}</button>
-        <button class="accent" data-act="publish" data-id="${p.id}"${this.busy ? " disabled" : ""}>${esc(t.publishNow)}</button>` : ""}
-      <button class="danger" data-act="remove" data-id="${p.id}" data-confirm>${esc(t.remove)}</button></div></div></div></article>`;
+      <label><span>${esc(t.when)}</span><input type="datetime-local" data-f="${id}:scheduledAt" value="${esc(toLocalInput(new Date(p.scheduledAt)))}"${ro}></label>
+      ${designFields(t, p, editable)}
+      <div class="row"><button data-act="download" data-id="${id}">${esc(t.download)}</button><button data-act="download-jpg" data-id="${id}">${esc(t.downloadJpg)}</button>
+      <button data-act="copy" data-id="${id}">${esc(t.copy)}</button>
+      <button data-act="duplicate" data-id="${id}">${esc(t.duplicate)}</button>
+      ${(p.design?.format ?? "portrait") !== "story" ? `<button data-act="story" data-id="${id}">${esc(t.makeStory)}</button>` : ""}
+      ${canPublish && editable ? `<button class="primary" data-act="schedule" data-id="${id}"${this.busy ? " disabled" : ""}>${esc(t.schedule)}</button>
+        <button class="accent" data-act="publish" data-id="${id}"${this.busy ? " disabled" : ""}>${esc(t.publishNow)}</button>` : ""}
+      <button class="danger" data-act="remove" data-id="${id}" data-confirm>${esc(t.remove)}</button></div></div></div></article>`;
   }
 
   private drawAll(): void {
@@ -319,6 +370,7 @@ export class DolphinStudioElement extends HTMLElement {
     this.applySecrets();
     this.view = "main";
     this.render();
+    this.armIdleLock();
   }
 
   private applySecrets(): void {
@@ -328,7 +380,45 @@ export class DolphinStudioElement extends HTMLElement {
   }
 
   private async onInput(e: Event): Promise<void> {
+    try { await this.handleInput(e); }
+    catch (err) { this.toast(this.errorText(err), "error"); }
+  }
+
+  private async handleInput(e: Event): Promise<void> {
     const el = e.target as HTMLInputElement;
+    if (el.hasAttribute("data-import")) {
+      const file = el.files?.[0];
+      if (e.type !== "change" || !file) return;
+      el.value = "";
+      if (file.size > MAX_CSV_BYTES) { this.toast(this.t.importBad, "error"); return; }
+      this.busy = true; this.render();
+      try {
+        const r = await this.studio!.importCsv(await file.text(), file.name);
+        this.busy = false; this.render();
+        this.toast(fill(this.t.imported, { n: r.samples.length, kind: this.t.importKinds[r.kind] }), "success");
+      } catch {
+        this.busy = false; this.render();
+        this.toast(this.t.importBad, "error");
+      }
+      return;
+    }
+    if (el.dataset.photo) {
+      const file = el.files?.[0];
+      if (e.type !== "change" || !file) return;
+      let photo: string;
+      try { photo = await photoFromFile(file); } catch { this.toast(this.t.badPhoto, "error"); return; }
+      await this.studio!.update(el.dataset.photo, { design: { photo } });
+      this.render();
+      return;
+    }
+    if (el.dataset.d) {
+      const [id, key] = el.dataset.d.split(":") as [string, string];
+      const value = key === "hideLogo" ? el.checked : key === "overlay" ? Number(el.value) : el.value;
+      await this.studio!.update(id, { design: { [key]: value } });
+      // a new format changes the canvas size: redraw the whole card
+      if (key === "format") this.render(); else this.scheduleRedraw(id);
+      return;
+    }
     if (el.hasAttribute("data-site-url")) { this.siteUrl = el.value.trim(); return; }
     if (el.hasAttribute("data-upload")) {
       if (e.type !== "change" || !el.files?.[0] || !this.draft) return;
@@ -349,6 +439,12 @@ export class DolphinStudioElement extends HTMLElement {
       if (keys[0] === "colors") { this.style.setProperty(`--d-${last}`, el.value); }
       return;
     }
+    if (el.dataset.pref?.startsWith("c.")) {
+      const k = el.dataset.pref.slice(2) as keyof CampaignPrefs;
+      (this.prefs.c as unknown as Record<string, string>)[k] = el.value;
+      await this.store!.set("prefs", JSON.stringify(this.prefs));
+      return;
+    }
     if (el.dataset.pref) {
       const k = el.dataset.pref as keyof Prefs;
       (this.prefs as unknown as Record<string, string | number | boolean>)[k] = k === "auto" ? el.checked
@@ -361,12 +457,19 @@ export class DolphinStudioElement extends HTMLElement {
     if (!f) return;
     const [id, key] = f.split(":") as [string, keyof Post];
     const v = el.value;
+    if (key === "link" && v.trim() && !safeLink(v)) { el.setCustomValidity(this.t.badLink); el.reportValidity(); return; }
+    el.setCustomValidity?.("");
+    const scheduled = key === "scheduledAt" ? new Date(v) : null;
+    if (scheduled && Number.isNaN(scheduled.getTime())) return; // still being typed
     const value = key === "points" ? v.split("\n").map(x => x.trim()).filter(Boolean)
       : key === "hashtags" ? v.split(/[\s,]+/).map(x => x.replace(/^#+/, "")).filter(Boolean)
-      : key === "scheduledAt" ? (v ? new Date(v).toISOString() : undefined)
+      : scheduled ? scheduled.toISOString()
       : v;
-    if (value === undefined) return;
     await this.studio!.update(id, { [key]: value } as Partial<Post>);
+    this.scheduleRedraw(id);
+  }
+
+  private scheduleRedraw(id: string): void {
     clearTimeout(this.redraw.get(id));
     this.redraw.set(id, setTimeout(() => {
       const c = this.root.querySelector<HTMLCanvasElement>(`canvas[data-canvas="${CSS.escape(id)}"]`);
@@ -387,7 +490,7 @@ export class DolphinStudioElement extends HTMLElement {
     const studio = this.studio!;
     try {
       switch (b.dataset.act) {
-        case "lock": this.secrets = null; this.passphrase = ""; studio.connect({ llm: undefined, publisher: undefined }); this.view = "lock"; this.render(); break;
+        case "lock": clearTimeout(this.idleTimer); this.lock(); break;
         case "forget": await this.vault!.reset(); this.view = "setup"; this.render(); break;
         case "save-keys": await this.saveKeys(); break;
         case "test": await this.testConnections(); break;
@@ -410,6 +513,13 @@ export class DolphinStudioElement extends HTMLElement {
           break;
         }
         case "download": await this.download(id); break;
+        case "download-jpg": await this.download(id, "image/jpeg"); break;
+        case "duplicate": await studio.duplicate(id); this.render(); this.toast(this.t.duplicated, "success"); break;
+        case "story": { const copy = await studio.duplicate(id, { format: "story" }); this.render(); this.goto(copy.id); this.toast(this.t.duplicated, "success"); break; }
+        case "no-photo": await studio.update(id, { design: { photo: "" } }); this.render(); break;
+        case "goto": this.goto(id); break;
+        case "export-csv": this.save(new Blob([studio.exportCsv()], { type: "text/csv;charset=utf-8" }), `dolphin-plan-${new Date().toISOString().slice(0, 10)}.csv`); break;
+        case "clear-import": { this.busy = true; this.render(); await studio.clearImport(); this.busy = false; this.render(); break; }
         case "copy": await navigator.clipboard.writeText(studio.caption(id)); this.toast(this.t.copied, "success"); break;
         case "remove": await studio.remove(id); this.render(); break;
         case "clear": await studio.clear(); this.render(); break;
@@ -452,8 +562,9 @@ export class DolphinStudioElement extends HTMLElement {
   }
 
   private async generate(): Promise<void> {
-    this.busy = true; this.render();
     const p = this.prefs;
+    if (p.c.link.trim() && !safeLink(p.c.link)) { this.toast(this.t.badLink, "error"); return; }
+    this.busy = true; this.render();
     const { posts, usage, model } = await this.studio!.generate({
       count: p.count,
       subject: SUBJECTS[p.subject] ?? SUBJECTS.mix!,
@@ -461,6 +572,7 @@ export class DolphinStudioElement extends HTMLElement {
       ...(p.notes ? { notes: p.notes } : {}),
       ...(p.start ? { startDate: new Date(p.start + "T00:00") } : {}),
       time: p.auto ? "auto" : p.time,
+      ...this.campaignOptions(),
     });
     this.busy = false; this.render();
     this.toast(fill(this.t.generated, { n: posts.length, cost: usd(estimateCostUsd(usage, model)) }), "success");
@@ -538,18 +650,48 @@ export class DolphinStudioElement extends HTMLElement {
       notes: idea.why,
       ...(this.prefs.start ? { startDate: new Date(this.prefs.start + "T00:00") } : {}),
       time: this.prefs.auto ? "auto" : this.prefs.time,
+      ...this.campaignOptions(),
     });
     this.busy = false; this.render();
     this.toast(fill(this.t.generated, { n: posts.length, cost: usd(estimateCostUsd(usage, model)) }), "success");
   }
 
-  private async download(id: string): Promise<void> {
-    const blob = await this.studio!.renderImage(id);
+  /** Campaign and design choices of the "Create" card, as generation options. */
+  private campaignOptions() {
+    const c = this.prefs.c;
+    const link = safeLink(c.link);
+    return {
+      objective: c.objective,
+      ...(c.audience.trim() ? { audience: c.audience.trim().slice(0, 200) } : {}),
+      ...(c.offer.trim() ? { offer: c.offer.trim().slice(0, 500) } : {}),
+      ...(c.campaign.trim() ? { campaign: c.campaign.trim() } : {}),
+      ...(link ? { link } : {}),
+      design: { ...(c.format !== "portrait" ? { format: c.format } : {}), ...(c.layout !== "classic" ? { layout: c.layout } : {}) },
+    };
+  }
+
+  private async download(id: string, type: "image/png" | "image/jpeg" = "image/png"): Promise<void> {
+    const post = this.studio!.get(id);
+    if (!post) return;
+    const blob = type === "image/png" ? await this.studio!.renderImage(id) : await this.renderer.export(post, this.studio!.brand, type);
+    this.save(blob, `dolphin-${id.slice(0, 8)}-${post.design?.format ?? "portrait"}.${type === "image/png" ? "png" : "jpg"}`);
+  }
+
+  private save(blob: Blob, name: string): void {
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = `dolphin-${id.slice(0, 8)}.png`;
+    a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  }
+
+  /** Scrolls to a post card and highlights it for a moment. */
+  private goto(id: string): void {
+    const card = this.root.querySelector<HTMLElement>(`article[data-post="${CSS.escape(id)}"]`);
+    if (!card) return;
+    card.scrollIntoView({ behavior: "smooth", block: "start" });
+    card.classList.add("flash");
+    setTimeout(() => card.classList.remove("flash"), 1600);
   }
 
   private async sendPosts(ids: string[], schedule: boolean): Promise<void> {

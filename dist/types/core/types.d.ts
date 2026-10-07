@@ -57,6 +57,23 @@ export interface BrandProfile {
 }
 export type PosterTheme = "dark" | "light" | "accent";
 export type PointStyle = "checks" | "steps";
+/** Poster size: 4:5 feed (1080×1350), 1:1 square (1080×1080), 9:16 story (1080×1920). */
+export type PosterFormat = "portrait" | "square" | "story";
+/** classic: text on the start side; centered: everything centered; minimal: big title, no points. */
+export type PosterLayout = "classic" | "centered" | "minimal";
+/** Designer choices for one poster. Every field is optional: defaults keep the original look. */
+export interface PosterDesign {
+    format?: PosterFormat;
+    layout?: PosterLayout;
+    /** Background photo (JPEG data URL), darkened so the text stays readable. */
+    photo?: string;
+    /** 0..0.9, how much the photo is darkened. Default 0.55. */
+    overlay?: number;
+    /** Hide the logo on this poster. */
+    hideLogo?: boolean;
+}
+/** What the post is for. Steers the wording and the call to action. */
+export type CampaignObjective = "awareness" | "engagement" | "traffic" | "leads" | "sales" | "event";
 /** What the model writes for one post. */
 export interface PostDraft {
     tag: string;
@@ -79,6 +96,11 @@ export interface Post extends PostDraft {
     externalId?: string;
     error?: string;
     errorCode?: DolphinErrorCode;
+    design?: PosterDesign;
+    /** Campaign name, used to group posts and to tag links (utm_campaign). */
+    campaign?: string;
+    /** Link added at the end of the caption, with UTM parameters. */
+    link?: string;
 }
 export interface GenerateRequest {
     count: number;
@@ -87,6 +109,11 @@ export interface GenerateRequest {
     notes?: string;
     /** Titles already used, so the model does not repeat itself. */
     avoidTitles?: string[];
+    objective?: CampaignObjective;
+    /** Audience of this campaign when it differs from the brand audience. */
+    audience?: string;
+    /** Short offer or event the campaign is about, as written by the manager. */
+    offer?: string;
 }
 export interface Usage {
     inputTokens: number;

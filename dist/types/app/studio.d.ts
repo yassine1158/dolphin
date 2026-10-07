@@ -1,6 +1,8 @@
 import { DolphinError } from "../core/errors.js";
-import { type PeakReport } from "../core/peak.js";
-import type { AnalyzeResult, BrandProfile, GenerateRequest, Post, PostDraft, PostIdea, SiteSnapshot, Usage } from "../core/types.js";
+import { type ImportResult } from "../core/csv.js";
+import { type InsightsReport } from "../core/insights.js";
+import { type EngagementSample, type PeakReport } from "../core/peak.js";
+import type { AnalyzeResult, BrandProfile, GenerateRequest, Post, PosterDesign, PostDraft, PostIdea, SiteSnapshot, Usage } from "../core/types.js";
 import type { KeyValueStore, LlmPort, PosterRenderer, PublisherPort } from "../ports/index.js";
 export interface StudioDeps {
     brand: BrandProfile;
@@ -19,6 +21,20 @@ export interface GenerateOptions extends GenerateRequest {
     /** HH:MM, local time, or "auto": each post at the peak time of its weekday. Default 19:00. */
     time?: string;
     everyDays?: number;
+    /** Campaign name stored on each new post (groups posts, tags links). */
+    campaign?: string;
+    /** Link added to each caption, with UTM parameters. */
+    link?: string;
+    /** Design applied to each new poster. */
+    design?: PosterDesign;
+}
+/** Where the imported data came from, kept with the samples. */
+export interface ImportedData {
+    kind: ImportResult["kind"];
+    samples: EngagementSample[];
+    fileName?: string;
+    importedAt: string;
+    undated?: boolean;
 }
 export interface SendReport {
     sent: string[];
@@ -28,7 +44,8 @@ export interface SendReport {
     }[];
 }
 type Listener = (posts: readonly Post[]) => void;
-declare const EDITABLE: readonly (keyof PostDraft | "scheduledAt")[];
+declare const EDITABLE: readonly (keyof PostDraft | "scheduledAt" | "design" | "campaign" | "link")[];
+type Patch = Partial<Pick<Post, (typeof EDITABLE)[number]>>;
 /**
  * Application service: every use case of the studio, independent of any UI or vendor.
  */
@@ -42,6 +59,10 @@ export declare class DolphinStudio {
     private loaded;
     private ideaList;
     private peakReport;
+    private insightsReport;
+    private imported;
+    /** Posts being sent right now: a second click never publishes them twice. */
+    private readonly sending;
     private readonly ns;
     constructor(deps: StudioDeps);
     get brand(): BrandProfile;
@@ -58,11 +79,16 @@ export declare class DolphinStudio {
     /** Saves the brand profile edited by the owner. */
     setBrand(brand: BrandProfile): Promise<BrandProfile>;
     get peaks(): PeakReport | null;
+    get insights(): InsightsReport | null;
+    get importedData(): Readonly<ImportedData> | null;
     /**
-     * Peak times from the page's own posts when the publisher can read them,
-     * otherwise (or when it fails) the general recommendation.
+     * Peak times and insights from the page's own posts (when the publisher can read them) and from
+     * the imported file, put on the same scale. Without enough data: the general recommendation.
      */
     peakTimes(): Promise<PeakReport>;
+    /** Imports a CSV export (Meta Business Suite posts, Ads Manager by hour…) and recomputes the peaks. */
+    importCsv(text: string, fileName?: string): Promise<ImportResult>;
+    clearImport(): Promise<void>;
     /** Reads the site through the model: a brand proposal (unless locked) and post ideas. */
     analyze(snapshot: SiteSnapshot): Promise<AnalyzeResult>;
     list(): readonly Post[];
@@ -72,7 +98,11 @@ export declare class DolphinStudio {
         usage: Usage;
         model: string;
     }>;
-    update(id: string, patch: Partial<Pick<Post, (typeof EDITABLE)[number]>>): Promise<Post>;
+    update(id: string, patch: Patch): Promise<Post>;
+    /** Copies a post as a new draft, e.g. to make the story version of a feed poster. */
+    duplicate(id: string, design?: PosterDesign): Promise<Post>;
+    /** The plan as CSV, for a spreadsheet or a client report. */
+    exportCsv(): string;
     remove(id: string): Promise<void>;
     clear(): Promise<void>;
     renderImage(id: string): Promise<Blob>;
@@ -80,6 +110,7 @@ export declare class DolphinStudio {
     /** Publishes now (`schedule: false`) or at each post's `scheduledAt`. */
     send(ids: readonly string[], schedule: boolean): Promise<SendReport>;
     sendAllScheduled(): Promise<SendReport>;
+    isSending(id: string): boolean;
     private require;
     private replace;
     private save;

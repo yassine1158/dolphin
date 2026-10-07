@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
+import { OBJECTIVE_BRIEF } from "./campaign.js";
 import type { BrandProfile, GenerateRequest, Lang } from "./types.js";
 
 const LANGUAGE: Record<Lang, string> = { fr: "French", en: "English", ar: "Modern Standard Arabic" };
@@ -41,6 +42,9 @@ ${hard.map(r => "- " + r).join("\n")}`;
 
 export function buildUserPrompt(req: GenerateRequest): string {
   const parts = [`Write ${req.count} post(s). They will be published one per day, in order.`];
+  if (req.objective) parts.push(`Campaign objective: ${OBJECTIVE_BRIEF[req.objective]}.`);
+  if (req.audience) parts.push(`Audience of this campaign: ${req.audience}.`);
+  if (req.offer) parts.push(`Offer or event, as written by the manager (use only these facts): ${req.offer}`);
   if (req.subject) parts.push(`Subject: ${req.subject}.`);
   if (req.tone) parts.push(`Tone: ${req.tone}.`);
   if (req.notes) parts.push(`Instruction from the manager: ${req.notes}`);

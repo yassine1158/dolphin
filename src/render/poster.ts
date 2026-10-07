@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
+import { sizeOf } from "../core/design.js";
 import type { BrandProfile, Post } from "../core/types.js";
 import type { PosterRenderer } from "../ports/index.js";
-import { paletteFor } from "./theme.js";
+import { paletteFor, rgba, type Palette } from "./theme.js";
 
 export const POSTER_WIDTH = 1080;
 export const POSTER_HEIGHT = 1350;
@@ -19,6 +20,8 @@ export const DEFAULT_FONTS: PosterFonts = {
 
 export interface PosterAssets {
   logo?: CanvasImageSource | null;
+  /** Background photo chosen by the designer (post.design.photo, already loaded). */
+  photo?: CanvasImageSource | null;
   /** Draw the logo on a white plate (a dark logo on a dark background). */
   logoPlate?: boolean;
   fonts?: PosterFonts;
@@ -28,7 +31,7 @@ export interface PosterAssets {
 
 type Ctx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
-const sizeOf = (img: CanvasImageSource): [number, number] => {
+const sizeOf2 = (img: CanvasImageSource): [number, number] => {
   const i = img as { naturalWidth?: number; naturalHeight?: number; width: number | SVGAnimatedLength; height: number | SVGAnimatedLength };
   const w = i.naturalWidth || (typeof i.width === "number" ? i.width : 0);
   const h = i.naturalHeight || (typeof i.height === "number" ? i.height : 0);
@@ -48,35 +51,64 @@ export function wrapText(ctx: Pick<Ctx, "measureText">, text: string, maxWidth: 
   return lines;
 }
 
+/** On a photo the text is always light, on a darkened image, whatever the theme. */
+function photoPalette(T: Palette): Palette {
+  return { ...T, fg: "#ffffff", tagBg: "rgba(0,0,0,.35)", tagFg: "#ffffff", tagLine: "rgba(255,255,255,.55)", logo: "plate" };
+}
+
+/** Draws `img` so it covers the whole rectangle (centered crop). */
+function cover(ctx: Ctx, img: CanvasImageSource, W: number, H: number): void {
+  const [iw, ih] = sizeOf2(img);
+  const k = Math.max(W / iw, H / ih), w = iw * k, h = ih * k;
+  ctx.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
+}
+
 /**
- * Draws a 1080×1350 poster. Content shrinks until it fits above the footer bar.
- * Arabic posters are mirrored (right-to-left).
+ * Draws a poster: 1080×1350 by default, 1080×1080 or 1080×1920 with `post.design.format`.
+ * Content shrinks until it fits above the footer bar. Arabic posters are mirrored (right-to-left).
  */
 export function drawPoster(ctx: Ctx, post: Post, brand: BrandProfile, assets: PosterAssets = {}): void {
-  const W = POSTER_WIDTH, H = POSTER_HEIGHT, M = 80, BAR = 170, MAXW = W - 2 * M;
+  const { width: W, height: H } = sizeOf(post.design);
+  const M = 80, BAR = 170, MAXW = W - 2 * M;
+  const layout = post.design?.layout ?? "classic";
+  const centered = layout === "centered";
   const F = assets.fonts ?? DEFAULT_FONTS;
-  const T = paletteFor(brand.colors, post.theme);
+  const photo = assets.photo ?? null;
+  const base = paletteFor(brand.colors, post.theme);
+  const T = photo ? photoPalette(base) : base;
   const rtl = brand.language === "ar";
   const x = (v: number, w = 0) => (rtl ? W - v - w : v); // mirror a left offset
-  const start: CanvasTextAlign = rtl ? "right" : "left";
+  const start: CanvasTextAlign = centered ? "center" : rtl ? "right" : "left";
   const end: CanvasTextAlign = rtl ? "left" : "right";
+  const tx0 = centered ? W / 2 : x(M); // where text lines start
   ctx.direction = rtl ? "rtl" : "ltr";
 
   // background
   ctx.fillStyle = T.bg; ctx.fillRect(0, 0, W, H);
-  const glow = (gx: number, gy: number, r: number, color: string) => {
-    const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, r);
-    g.addColorStop(0, color); g.addColorStop(1, "rgba(0,0,0,0)");
+  if (photo) {
+    cover(ctx, photo, W, H);
+    const k = post.design?.overlay ?? 0.55;
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, `rgba(0,0,0,${Math.min(0.95, k * 0.75)})`);
+    g.addColorStop(0.45, `rgba(0,0,0,${k})`);
+    g.addColorStop(1, `rgba(0,0,0,${Math.min(0.95, k + 0.2)})`);
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
-  };
-  glow(x(W * 0.92), H * 0.08, 640, T.glow[0]);
-  glow(x(0), H, 560, T.glow[1]);
+    ctx.fillStyle = rgba(brand.colors.primary, 0.25); ctx.fillRect(0, 0, W, H);
+  } else {
+    const glow = (gx: number, gy: number, r: number, color: string) => {
+      const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, r);
+      g.addColorStop(0, color); g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    };
+    glow(x(W * 0.92), H * 0.08, 640, T.glow[0]);
+    glow(x(0), H, 560, T.glow[1]);
+  }
 
   // logo + tag
   const lh = 118;
   let lw = 0;
-  if (assets.logo) {
-    const [iw, ih] = sizeOf(assets.logo);
+  if (assets.logo && !post.design?.hideLogo) {
+    const [iw, ih] = sizeOf2(assets.logo);
     lw = Math.min(lh * iw / ih, 420);
     if (T.logo === "plate" || assets.logoPlate) { ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.roundRect(x(M - 20, lw + 40), 60, lw + 40, lh + 24, 26); ctx.fill(); }
     ctx.drawImage(assets.logo, x(M, lw), 72, lw, lh);
@@ -92,34 +124,42 @@ export function drawPoster(ctx: Ctx, post: Post, brand: BrandProfile, assets: Po
     ctx.fillText(label, tx + tw / 2, ty + 31, tw - 40);
   }
 
-  // content, scaled to fit
-  const points = post.points.filter(Boolean).slice(0, 6);
-  const top = 290, bottom = H - BAR - 50;
+  // content, scaled to fit (minimal: a bigger title and no points)
+  const points = layout === "minimal" ? [] : post.points.filter(Boolean).slice(0, 6);
+  const big = layout === "minimal" ? 1.3 : 1;
+  const top = H >= 1800 ? 380 : H <= 1100 ? 250 : 290, bottom = H - BAR - (H >= 1800 ? 120 : 50);
   type Layout = { s: number; title: string[]; sub: string[]; pts: string[][]; rows: number[]; h: number };
   let L: Layout | undefined;
-  for (let s = 1; s >= 0.6; s -= 0.04) {
+  for (let s = big; s >= 0.5; s -= 0.04) {
     ctx.font = `800 ${88 * s}px ${F.display}`; const title = wrapText(ctx, post.title, MAXW);
-    ctx.font = `700 ${50 * s}px ${F.display}`; const sub = wrapText(ctx, post.subtitle, MAXW);
+    ctx.font = `700 ${50 * Math.min(s, 1)}px ${F.display}`; const sub = wrapText(ctx, post.subtitle, MAXW);
     ctx.font = `700 ${40 * s}px ${F.body}`; const pts = points.map(t => wrapText(ctx, t, MAXW - 96 * s));
     const rows = pts.map(l => Math.max(68 * s, l.length * 48 * s));
-    const h = title.length * 94 * s + (sub.length ? 20 * s + sub.length * 60 * s : 0)
+    const h = title.length * 94 * s + (sub.length ? 20 * s + sub.length * 60 * Math.min(s, 1) : 0)
       + (rows.length ? 48 * s + rows.reduce((a, r) => a + r + 26 * s, 0) - 26 * s : 0);
     L = { s, title, sub, pts, rows, h };
     if (top + h <= bottom) break;
   }
   const { s, title, sub, pts, rows, h } = L!;
-  let y = top + Math.max(0, (bottom - top - h) * 0.4);
+  let y = top + Math.max(0, (bottom - top - h) * (centered || layout === "minimal" ? 0.5 : 0.4));
   ctx.textAlign = start; ctx.textBaseline = "top";
+  if (photo) { ctx.shadowColor = "rgba(0,0,0,.45)"; ctx.shadowBlur = 18; }
   ctx.fillStyle = T.fg; ctx.font = `800 ${88 * s}px ${F.display}`;
-  for (const l of title) { ctx.fillText(l, x(M), y); y += 94 * s; }
+  for (const l of title) { ctx.fillText(l, tx0, y); y += 94 * s; }
   if (sub.length) {
     y += 20 * s;
-    ctx.fillStyle = T.accent; ctx.font = `700 ${50 * s}px ${F.display}`;
-    for (const l of sub) { ctx.fillText(l, x(M), y); y += 60 * s; }
+    ctx.fillStyle = T.accent; ctx.font = `700 ${50 * Math.min(s, 1)}px ${F.display}`;
+    for (const l of sub) { ctx.fillText(l, tx0, y); y += 60 * Math.min(s, 1); }
   }
+  ctx.shadowColor = "transparent"; ctx.shadowBlur = 0;
   if (rows.length) y += 48 * s;
+  // centered: the points form one block (markers aligned), centered as a whole
+  ctx.font = `700 ${40 * s}px ${F.body}`;
+  const blockW = Math.max(0, ...pts.flat().map(l => ctx.measureText(l).width)) + 96 * s;
+  const blockStart = centered ? Math.max(M, (W - blockW) / 2) : M;
   pts.forEach((lines, i) => {
-    const r = 34 * s, rowH = rows[i]!, cy = y + rowH / 2, cx = x(M + r);
+    const r = 34 * s, rowH = rows[i]!, cy = y + rowH / 2;
+    const cx = x(blockStart + r);
     ctx.fillStyle = T.markBg; ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = T.markFg; ctx.strokeStyle = T.markFg; ctx.textBaseline = "middle";
     if (post.style === "steps") {
@@ -130,8 +170,8 @@ export function drawPoster(ctx: Ctx, post: Post, brand: BrandProfile, assets: Po
       ctx.lineWidth = 5 * s; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.beginPath();
       ctx.moveTo(cx - 14 * s, cy + s); ctx.lineTo(cx - 4 * s, cy + 11 * s); ctx.lineTo(cx + 15 * s, cy - 10 * s); ctx.stroke();
     }
-    ctx.textAlign = start; ctx.fillStyle = T.fg; ctx.font = `700 ${40 * s}px ${F.body}`;
-    lines.forEach((l, j) => ctx.fillText(l, x(M + 96 * s), cy + (j - (lines.length - 1) / 2) * 48 * s));
+    ctx.textAlign = rtl ? "right" : "left"; ctx.fillStyle = T.fg; ctx.font = `700 ${40 * s}px ${F.body}`;
+    lines.forEach((l, j) => ctx.fillText(l, x(blockStart + 96 * s), cy + (j - (lines.length - 1) / 2) * 48 * s));
     y += rowH + 26 * s;
   });
 
@@ -154,7 +194,7 @@ export function drawPoster(ctx: Ctx, post: Post, brand: BrandProfile, assets: Po
   ctx.textAlign = end;
   if (l2) { ctx.fillText(l1, x(W - M), cyb - 6, 380); ctx.fillText(l2, x(W - M), cyb + 32, 380); } else if (l1) ctx.fillText(l1, x(W - M), cyb + 12, 380);
 
-  ctx.textAlign = start;
+  ctx.textAlign = rtl ? "right" : "left";
   if (assets.contactLabel) { ctx.globalAlpha = 0.85; ctx.font = `700 24px ${F.body}`; ctx.fillText(assets.contactLabel.toUpperCase(), x(M + 98), cyb - 14); ctx.globalAlpha = 1; }
   const room = MAXW - 98 - (ctaW ? ctaW + 32 : 0);
   let size = 42;
@@ -170,7 +210,7 @@ export class CanvasPosterRenderer implements PosterRenderer {
   private readonly images = new Map<string, Promise<HTMLImageElement | null>>();
   constructor(private readonly options: { fonts?: PosterFonts; contactLabel?: string | ((brand: BrandProfile) => string | undefined) } = {}) {}
 
-  private loadImage(url?: string): Promise<HTMLImageElement | null> {
+  private loadImage(url?: string, cache = true): Promise<HTMLImageElement | null> {
     if (!url) return Promise.resolve(null);
     let p = this.images.get(url);
     if (!p) {
@@ -181,6 +221,8 @@ export class CanvasPosterRenderer implements PosterRenderer {
         img.onerror = () => resolve(null);
         img.src = url;
       });
+      // photos are big data URLs: keep only the last few in memory
+      if (!cache && this.images.size > 12) this.images.delete(this.images.keys().next().value!);
       this.images.set(url, p);
     }
     return p;
@@ -194,19 +236,25 @@ export class CanvasPosterRenderer implements PosterRenderer {
   async draw(canvas: HTMLCanvasElement, post: Post, brand: BrandProfile): Promise<void> {
     const fonts = this.options.fonts ?? DEFAULT_FONTS;
     await Promise.all([`800 80px ${fonts.display}`, `700 40px ${fonts.body}`].map(f => document.fonts?.load(f).catch(() => undefined)));
-    const logo = await this.logoFor(post, brand);
+    const [logo, photo] = await Promise.all([this.logoFor(post, brand), this.loadImage(post.design?.photo, false)]);
     // no light version of the logo for dark posters: keep it readable on a white plate
     const logoPlate = paletteFor(brand.colors, post.theme).logo === "onDark" && !brand.logoOnDarkUrl;
-    canvas.width = POSTER_WIDTH; canvas.height = POSTER_HEIGHT;
+    const { width, height } = sizeOf(post.design);
+    canvas.width = width; canvas.height = height;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas 2D is not available.");
     const label = typeof this.options.contactLabel === "function" ? this.options.contactLabel(brand) : this.options.contactLabel;
-    drawPoster(ctx, post, brand, { logo, logoPlate, fonts, ...(label ? { contactLabel: label } : {}) });
+    drawPoster(ctx, post, brand, { logo, photo, logoPlate, fonts, ...(label ? { contactLabel: label } : {}) });
   }
 
   async render(post: Post, brand: BrandProfile): Promise<Blob> {
+    return this.export(post, brand, "image/png");
+  }
+
+  /** PNG (lossless, for Facebook) or JPEG (smaller, for messaging apps and print shops). */
+  async export(post: Post, brand: BrandProfile, type: "image/png" | "image/jpeg" = "image/png"): Promise<Blob> {
     const canvas = document.createElement("canvas");
     await this.draw(canvas, post, brand);
-    return new Promise((resolve, reject) => canvas.toBlob(b => (b ? resolve(b) : reject(new Error("PNG export failed."))), "image/png"));
+    return new Promise((resolve, reject) => canvas.toBlob(b => (b ? resolve(b) : reject(new Error("Image export failed."))), type, 0.92));
   }
 }
