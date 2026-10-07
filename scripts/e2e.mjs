@@ -115,7 +115,31 @@ try {
     await p.close();
   }
 
-  // 3. Arabic, right to left
+  // 3. Keys managed by the host page: no passphrase screen, changes reported to the host
+  {
+    const { p, errors } = await page("http://localhost:8787/examples/direct/index.html");
+    await p.route("https://api.anthropic.com/**", route => route.fulfill({ status: 401, contentType: "application/json", body: JSON.stringify({ type: "error", error: { type: "authentication_error", message: "invalid x-api-key" } }) }));
+    await p.evaluate(async () => {
+      document.querySelector("#studio").innerHTML = "";
+      const brand = await (await fetch("../brand.example.json")).json();
+      window.saved = [];
+      Dolphin.mount("#studio", { mode: "direct", brand, secrets: { claudeKey: "sk-ant-host" }, onSecretsChange: s => { window.saved.push(s); } });
+    });
+    await p.waitForSelector("dolphin-studio [data-act=generate]");
+    check(await p.$("dolphin-studio input[name=pass]") === null && await p.$("dolphin-studio [data-act=lock]") === null, "host keys: no passphrase screen, no lock button");
+    check(/Clé Claude enregistrée/.test(await p.textContent("dolphin-studio .state")), "host keys: Claude key detected");
+    await p.fill("dolphin-studio [data-key=metaPageId]", "999");
+    await p.click("dolphin-studio [data-act=save-keys]");
+    check(await p.evaluate(() => window.saved.length === 1 && window.saved[0].metaPageId === "999" && window.saved[0].claudeKey === "sk-ant-host"), "host keys: onSecretsChange receives the new keys");
+    check(await p.evaluate(() => localStorage.getItem("dolphin:acme:vault")) === null, "host keys: nothing written to the widget vault");
+    await p.click("dolphin-studio [data-act=generate]");
+    await p.waitForFunction(() => /invalide/.test(document.querySelector("dolphin-studio").shadowRoot.querySelector(".toast")?.textContent ?? ""));
+    check(true, "host keys: Claude 401 shown as a clear message");
+    check(errors.length === 0, `host keys: no console errors ${errors.join(" | ")}`);
+    await p.close();
+  }
+
+  // 4. Arabic, right to left
   {
     const { p, errors } = await page("http://localhost:8787/examples/plain-html/index.html");
     await p.evaluate(() => {

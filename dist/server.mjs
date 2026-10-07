@@ -1,4 +1,4 @@
-/*! DOLPHin 0.1.0 · (c) Yassine Chaabane */
+/*! DOLPHin 0.2.0 · (c) Yassine Chaabane */
 
 // src/server/index.ts
 import { timingSafeEqual } from "node:crypto";
@@ -353,7 +353,7 @@ function graphError(e, status) {
 }
 
 // src/server/index.ts
-var VERSION = "0.1.0";
+var VERSION = "0.2.0";
 var MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 function send(res, status, body) {
   res.statusCode = status;

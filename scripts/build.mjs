@@ -3,7 +3,7 @@ import { build } from "esbuild";
 import { rmSync } from "node:fs";
 
 rmSync("dist", { recursive: true, force: true });
-const banner = { js: "/*! DOLPHin 0.1.0 · (c) Yassine Chaabane */" };
+const banner = { js: "/*! DOLPHin 0.2.0 · (c) Yassine Chaabane */" };
 const common = { bundle: true, sourcemap: true, target: "es2022", legalComments: "eof", logLevel: "info" };
 
 await Promise.all([
