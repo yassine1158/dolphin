@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 /**
  * Ports: what the application needs from the outside world.
  * Adapters (Claude, Meta, HTTP proxy, storage…) implement them; the core never imports an adapter.

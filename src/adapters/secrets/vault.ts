@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 import { DolphinError } from "../../core/errors.js";
 import type { KeyValueStore } from "../../ports/index.js";
 

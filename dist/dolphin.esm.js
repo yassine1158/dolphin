@@ -1,4 +1,4 @@
-/*! DOLPHin 0.3.0 · (c) 2026 Yassine Chaabane · Licence propriétaire, tous droits réservés · Logiciels tiers : THIRD-PARTY-NOTICES.md */
+/*! DOLPHin 0.3.0 · (c) 2026 Yassine Chaabane · SPDX-License-Identifier: AGPL-3.0-only · Licence commerciale : COMMERCIAL-LICENSE.md · Logiciels tiers : THIRD-PARTY-NOTICES.md */
 
 // src/core/errors.ts
 var DolphinError = class extends Error {

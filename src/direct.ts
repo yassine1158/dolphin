@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 import { ClaudeLlm } from "./adapters/llm/claude.js";
 import { MetaPagePublisher } from "./adapters/publish/meta.js";
 import { DolphinStudioElement } from "./widget/element.js";

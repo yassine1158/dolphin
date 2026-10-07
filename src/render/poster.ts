@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 import type { BrandProfile, Post } from "../core/types.js";
 import type { PosterRenderer } from "../ports/index.js";
 import { paletteFor } from "./theme.js";

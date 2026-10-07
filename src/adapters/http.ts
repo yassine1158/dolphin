@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 /**
  * Adapters for proxy mode: the browser talks to a DOLPHin server (Node, PHP, Python…)
  * that holds the keys. Contract: openapi.yaml.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 /** Shadow DOM styles: isolated from the host site, themed through CSS custom properties. */
 export const STYLES = /* css */ `
 :host{--d-primary:#0b3f2f;--d-accent:#f3811d;--d-bg:#f5f7f6;--d-surface:#fff;--d-ink:#14211c;--d-muted:#5d6b65;--d-line:#dde5e1;--d-danger:#b42318;--d-ok:#1f7a45;
