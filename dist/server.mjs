@@ -1,4 +1,4 @@
-/*! DOLPHin 0.3.0 · (c) Yassine Chaabane */
+/*! DOLPHin 0.3.0 · (c) 2026 Yassine Chaabane · Licence propriétaire, tous droits réservés · Logiciels tiers : THIRD-PARTY-NOTICES.md */
 
 // src/server/index.ts
 import { timingSafeEqual } from "node:crypto";
