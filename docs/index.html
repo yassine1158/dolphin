@@ -3,10 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>DOLPHin · studio IA de publications pour votre site</title>
-  <meta name="description" content="DOLPHin lit votre site, propose des idées, écrit vos publications Facebook et Instagram, dessine l'affiche à vos couleurs et la programme. Open source (AGPL-3.0), intégrable à n'importe quel site.">
-  <meta property="og:title" content="DOLPHin · studio IA de publications">
-  <meta property="og:description" content="Vos publications écrites, dessinées et programmées par l'IA, depuis votre propre site.">
+  <title>DOLPHin · vos publications Facebook, publiées automatiquement</title>
+  <meta name="description" content="DOLPHin lit votre site, écrit vos publications, dessine l'affiche à vos couleurs et les publie automatiquement sur votre page Facebook, aux heures où votre public réagit le plus. Open source (AGPL-3.0), intégrable à n'importe quel site.">
+  <meta property="og:title" content="DOLPHin · publications Facebook automatiques">
+  <meta property="og:description" content="Il comprend votre entreprise, écrit, dessine et publie tout seul, au meilleur moment.">
   <meta name="theme-color" content="#041a14">
   <link rel="icon" href="dolphin-mark.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,13 +20,14 @@
   <div class="wrap nav-in">
     <a class="brand" href="#top" aria-label="DOLPHin, accueil"><img src="dolphin-mark.svg" alt="" width="36" height="36"><span>DOLPH<b>in</b></span></a>
     <nav aria-label="Sections">
-      <a href="#comment">Comment ça marche</a><a href="#auto">Automatique</a><a href="#demo">Démo</a><a href="#integration">Intégration</a><a href="#licence">Licence</a>
+      <a href="#idees">Idées clés</a><a href="#comment">En détail</a><a href="#auto">Automatique</a><a href="#integration">Intégration</a><a href="#faq">Questions</a>
       <a class="gh" href="https://github.com/yassine1158/dolphin">GitHub</a>
     </nav>
   </div>
 </header>
 
 <main id="main">
+  <!-- ============================================================ hero -->
   <section class="hero" id="top">
     <div class="wrap hero-in">
       <div class="hero-text">
@@ -34,7 +35,7 @@
         <h1>Vos publications Facebook, <em>publiées automatiquement</em> au meilleur moment.</h1>
         <p class="lead">DOLPHin lit votre site, écrit vos publications, dessine l'affiche à vos couleurs, puis <strong>les publie tout seul sur votre page, aux heures où votre public réagit le plus</strong>. Vous validez une fois : il s'occupe du reste, tous les jours.</p>
         <div class="cta">
-          <a class="btn primary" href="#demo">Essayer la démo</a>
+          <a class="btn primary" href="#idees">Découvrir DOLPHin</a>
           <a class="btn ghost" href="https://github.com/yassine1158/dolphin">Voir le code</a>
         </div>
         <ul class="facts">
@@ -43,7 +44,7 @@
           <li><strong>≈ 25 FCFA</strong> par publication</li>
         </ul>
       </div>
-      <div class="hero-art" aria-label="Exemples d'affiches générées par DOLPHin">
+      <div class="hero-art" aria-label="Exemples d'affiches dessinées par DOLPHin">
         <canvas data-hero width="1080" height="1350" role="img" aria-label="Affiche : Le pain sort du four à 6 h"></canvas>
         <canvas data-hero width="1080" height="1350" role="img" aria-label="Affiche : Votre gâteau d'anniversaire"></canvas>
         <canvas data-hero width="1080" height="1350" role="img" aria-label="Affiche : La livraison arrive"></canvas>
@@ -51,26 +52,122 @@
     </div>
   </section>
 
-  <section class="band" id="comment">
+  <!-- ============================================================ problem -->
+  <section class="wrap problem" aria-labelledby="pb-title">
+    <h2 id="pb-title">Le problème qu'il résout</h2>
+    <div class="pb-grid">
+      <p class="pb-text">Une petite entreprise sait qu'elle doit publier sur Facebook <strong>régulièrement</strong>. Dans la réalité, il faut trouver une idée chaque jour, écrire un texte, faire une affiche propre, penser à la publier, et le faire au bon moment. Au bout de deux semaines, la page s'arrête. Les clients qui la suivaient oublient l'entreprise.</p>
+      <ul class="pb-list">
+        <li><b>Pas d'idée</b><span>« Qu'est-ce que je publie aujourd'hui ? »</span></li>
+        <li><b>Pas de temps</b><span>Écrire et dessiner prend une heure par publication.</span></li>
+        <li><b>Pas de graphiste</b><span>Les affiches ne ressemblent pas à la marque.</span></li>
+        <li><b>Mauvais moment</b><span>Une publication à 15 h, quand personne ne regarde.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============================================================ key ideas -->
+  <section class="band" id="idees" aria-labelledby="ideas-title">
     <div class="wrap">
-      <h2>Comment ça marche</h2>
-      <ol class="steps">
-        <li><span class="n">1</span><h3>Il lit votre site</h3><p>Activité, clientèle, ville, produits disponibles ou à venir, contact. Il récupère aussi votre logo et en déduit vos couleurs.</p></li>
-        <li><span class="n">2</span><h3>Il propose des idées</h3><p>6 à 8 sujets adaptés à votre activité : vendre, conseiller, rassurer, annoncer. Chacun avec son angle et la raison de le publier.</p></li>
-        <li><span class="n">3</span><h3>Il écrit et dessine</h3><p>Le texte, les hashtags et une affiche 1080 × 1350 à vos couleurs. Vous relisez, vous corrigez si besoin.</p></li>
-        <li><span class="n">4</span><h3>Il publie tout seul</h3><p>Un clic sur « Programmer tout » : chaque publication part automatiquement sur votre page, à l'heure de pointe du jour. Même ordinateur éteint.</p></li>
+      <h2 id="ideas-title">Les 6 idées clés</h2>
+      <p class="section-lead">Tout DOLPHin tient en six idées. Chacune répond à l'une des difficultés ci-dessus.</p>
+      <ol class="keys">
+        <li>
+          <span class="k-n">1</span>
+          <h3>Il comprend votre entreprise tout seul</h3>
+          <p>Il n'y a aucun formulaire à remplir. DOLPHin lit votre site : votre activité, vos produits, ce qui est disponible et ce qui arrive bientôt, votre ville, votre numéro WhatsApp. Il vous propose ensuite un profil, et vous n'avez qu'à le vérifier.</p>
+        </li>
+        <li>
+          <span class="k-n">2</span>
+          <h3>Il ne manque jamais d'idées</h3>
+          <p>À partir de votre activité, il propose 6 à 8 sujets variés : vendre un produit, donner un conseil utile, montrer les coulisses, annoncer une nouveauté. Chaque idée dit <em>pourquoi</em> elle aide votre entreprise maintenant.</p>
+        </li>
+        <li>
+          <span class="k-n">3</span>
+          <h3>Il écrit et dessine à votre image</h3>
+          <p>Pour chaque publication : un texte court, des hashtags, et une affiche 1080 × 1350 avec <strong>votre logo et vos couleurs</strong>, qu'il trouve sur votre site. Le format convient à Facebook comme à Instagram.</p>
+        </li>
+        <li>
+          <span class="k-n">4</span>
+          <h3>Il publie automatiquement, au meilleur moment</h3>
+          <p>Il calcule les heures où <em>votre</em> public réagit le plus, puis programme chaque publication à l'heure de pointe de son jour. Une fois la série validée, Facebook publie tout seul, jour après jour.</p>
+        </li>
+        <li>
+          <span class="k-n">5</span>
+          <h3>Il respecte vos règles</h3>
+          <p>Il ne vend que ce qui est disponible, ne donne pas de prix si vous ne le voulez pas, n'invente aucun chiffre ni aucune promesse, et ne parle jamais de ce que vous gardez secret. Rien ne part sans votre validation.</p>
+        </li>
+        <li>
+          <span class="k-n">6</span>
+          <h3>Il s'installe partout</h3>
+          <p>Une ligne de code suffit, sur n'importe quel site : WordPress, PHP, boutique en ligne, React… Votre site et votre équipe restent les mêmes : DOLPHin apparaît simplement dans votre espace d'administration.</p>
+        </li>
       </ol>
     </div>
   </section>
 
-  <section class="wrap auto" id="auto" aria-labelledby="auto-title">
-    <div class="auto-in">
+  <!-- ============================================================ in detail -->
+  <section class="wrap detail" id="comment" aria-labelledby="detail-title">
+    <h2 id="detail-title">Comment ça marche, en détail</h2>
+    <p class="section-lead">Le premier jour vous prend dix minutes. Ensuite, quelques clics par semaine suffisent.</p>
+    <div class="timeline">
+      <article>
+        <span class="t-n">1</span>
+        <div>
+          <h3>DOLPHin lit votre site <small>une seule fois</small></h3>
+          <ul>
+            <li><b>Ce qu'il lit :</b> le titre et la description de vos pages, vos titres et textes, vos numéros de téléphone et liens WhatsApp, votre adresse et votre logo.</li>
+            <li><b>Ce qu'il en tire :</b> le nom de l'entreprise, la clientèle, la ville, la liste des produits (disponibles ou bientôt), et un appel à l'action pour vos affiches.</li>
+            <li><b>Vos couleurs :</b> il les extrait de votre logo. Vous pouvez aussi envoyer un autre logo.</li>
+            <li><b>Vous :</b> vous vérifiez le profil proposé, vous corrigez si besoin, puis vous l'enregistrez.</li>
+          </ul>
+        </div>
+      </article>
+      <article>
+        <span class="t-n">2</span>
+        <div>
+          <h3>Il propose des idées <small>quand vous voulez</small></h3>
+          <ul>
+            <li><b>Des sujets variés :</b> vente, conseils, confiance, nouveautés. Chaque idée a un angle et une raison.</li>
+            <li><b>Vous :</b> vous choisissez une idée, ou vous demandez directement une série (jusqu'à 10 publications) sur un thème, avec une consigne si vous voulez (« nouvelle fournée cette semaine »).</li>
+          </ul>
+        </div>
+      </article>
+      <article>
+        <span class="t-n">3</span>
+        <div>
+          <h3>Il écrit et dessine <small>en une minute</small></h3>
+          <ul>
+            <li><b>Le texte :</b> 3 à 7 lignes, quelques émojis, et un appel à vous contacter, par exemple sur WhatsApp.</li>
+            <li><b>L'affiche :</b> une étiquette, un titre, des points clés, votre logo, vos couleurs et votre contact. Trois styles sont possibles, et le texte s'ajuste tout seul à la place disponible.</li>
+            <li><b>Vous :</b> vous relisez. Tout se modifie avant l'envoi : texte, titre, couleurs, date.</li>
+          </ul>
+        </div>
+      </article>
+      <article>
+        <span class="t-n">4</span>
+        <div>
+          <h3>Il publie tout seul <small>chaque jour</small></h3>
+          <ul>
+            <li><b>Un clic :</b> « Programmer tout » envoie la série à Facebook, à raison d'une publication par jour, chacune à l'heure de pointe de son jour.</li>
+            <li><b>Ensuite :</b> c'est Facebook qui publie, à l'heure prévue, même si votre ordinateur est éteint.</li>
+            <li><b>Ou tout de suite :</b> « Publier maintenant » envoie une publication à l'instant.</li>
+          </ul>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <!-- ============================================================ automatic + peak times -->
+  <section class="band auto" id="auto" aria-labelledby="auto-title">
+    <div class="wrap auto-in">
       <div>
         <h2 id="auto-title">Publié automatiquement, au bon moment</h2>
         <p class="auto-lead">Publier au hasard, c'est parler quand personne n'écoute. DOLPHin regarde quand vos publications passées ont reçu le plus de réactions, de commentaires et de partages, puis il programme chaque nouvelle publication à <strong>l'heure de pointe de son jour</strong>.</p>
         <ul class="auto-list">
-          <li><strong>Vous validez une fois.</strong> Un clic programme toute la série : une publication par jour.</li>
-          <li><strong>Facebook publie tout seul.</strong> La publication est envoyée par Facebook à l'heure prévue, même si votre ordinateur est éteint.</li>
+          <li><strong>Calculé sur votre page.</strong> Il lit vos 100 dernières publications. Un commentaire compte double et un partage triple : ce sont les signes d'un vrai intérêt.</li>
+          <li><strong>Vous validez une fois.</strong> Un clic programme toute la série, à raison d'une publication par jour.</li>
+          <li><strong>Facebook publie tout seul.</strong> L'envoi se fait à l'heure prévue, même si votre ordinateur est éteint.</li>
           <li><strong>Une page sans historique ?</strong> DOLPHin part des habitudes générales (midi et soirée en semaine, fin de matinée le week-end), puis s'affine avec vos résultats.</li>
         </ul>
       </div>
@@ -83,30 +180,49 @@
     </div>
   </section>
 
-  <section class="wrap features" aria-labelledby="f-title">
-    <h2 id="f-title">Pensé pour les vraies entreprises</h2>
-    <div class="grid">
-      <article><h3>Fidèle à votre marque</h3><p>Il ne vend que ce qui est disponible, ne donne jamais de prix si vous ne le voulez pas, n'invente aucun chiffre et respecte vos sujets interdits.</p></article>
-      <article><h3>Automatique, sous votre contrôle</h3><p>Après votre validation, tout part seul, à l'heure de pointe. Avant, chaque texte et chaque affiche se modifient librement.</p></article>
-      <article><h3>Sur n'importe quel site</h3><p>Un composant web standard : HTML, WordPress, PHP, Django, React… Le serveur expose 5 routes documentées (OpenAPI), réimplémentables dans tout langage.</p></article>
-      <article><h3>Vos clés en sécurité</h3><p>En mode serveur, les clés ne quittent jamais votre serveur. En mode navigateur, elles sont chiffrées sur l'appareil (AES-GCM 256).</p></article>
-      <article><h3>Français, anglais, arabe</h3><p>L'interface et les publications s'adaptent à la langue de la marque, y compris l'arabe de droite à gauche.</p></article>
-      <article><h3>Code ouvert et testé</h3><p>TypeScript strict, architecture hexagonale, 43 tests unitaires et des tests de bout en bout dans un vrai navigateur.</p></article>
+  <!-- ============================================================ does / does not -->
+  <section class="wrap rules" aria-labelledby="rules-title">
+    <h2 id="rules-title">Ce que DOLPHin fait, et ce qu'il ne fait jamais</h2>
+    <div class="rules-grid">
+      <div class="do">
+        <h3>Il fait</h3>
+        <ul>
+          <li>Il vend ce qui est disponible et annonce ce qui arrive bientôt.</li>
+          <li>Il écrit dans la langue de votre marque : français, anglais ou arabe.</li>
+          <li>Il reprend votre logo, vos couleurs et votre numéro sur chaque affiche.</li>
+          <li>Il évite de répéter les titres déjà publiés.</li>
+          <li>Il vous montre le coût de chaque génération.</li>
+        </ul>
+      </div>
+      <div class="dont">
+        <h3>Il ne fait jamais</h3>
+        <ul>
+          <li>Il ne publie rien sans votre validation.</li>
+          <li>Il n'invente ni chiffres, ni promotions, ni récompenses.</li>
+          <li>Il ne donne pas de prix, de quantités ni de délais, sauf si vous l'autorisez.</li>
+          <li>Il ne parle pas des sujets que vous gardez secrets.</li>
+          <li>Il ne montre jamais vos clés : elles restent sur votre serveur ou chiffrées sur votre appareil.</li>
+        </ul>
+      </div>
     </div>
   </section>
 
-  <section class="demo" id="demo">
+  <!-- ============================================================ who -->
+  <section class="band who" aria-labelledby="who-title">
     <div class="wrap">
-      <h2>Démo en direct</h2>
-      <p class="lead">Voici le vrai composant DOLPHin, branché sur le site d'une boulangerie fictive, <a href="demo/site.html" target="_blank" rel="noopener">« Le Fournil »</a>. Les réponses de l'IA et la page Facebook sont simulées : la démo est gratuite, et rien ne quitte votre navigateur.</p>
-      <ol class="hint-steps"><li>« Analyser le site »</li><li>« Enregistrer le profil »</li><li>« Analyser ma page » (heures de pointe)</li><li>« Générer », puis « Programmer tout »</li></ol>
-      <button class="btn primary" id="demo-start">Lancer la démo</button>
-      <div id="demo-studio" class="demo-host"></div>
+      <h2 id="who-title">Pour qui ?</h2>
+      <div class="who-grid">
+        <article><h3>Commerces et PME</h3><p>Boulangeries, élevages, boutiques, restaurants, services. Pour une présence régulière sur Facebook, sans y passer ses soirées.</p></article>
+        <article><h3>Agences et freelances</h3><p>Pour gérer les pages de plusieurs clients avec une qualité constante, en marque blanche sous licence commerciale.</p></article>
+        <article><h3>Créateurs de sites</h3><p>Pour ajouter un vrai service marketing aux sites que vous livrez, avec une seule ligne de code.</p></article>
+      </div>
     </div>
   </section>
 
-  <section class="wrap integration" id="integration">
-    <h2>Intégration en 3 étapes</h2>
+  <!-- ============================================================ integration -->
+  <section class="wrap integration" id="integration" aria-labelledby="int-title">
+    <h2 id="int-title">Intégration en 3 étapes</h2>
+    <p class="section-lead">Deux façons de l'utiliser. En <strong>mode serveur</strong> (recommandé), vos clés restent sur votre serveur. En <strong>mode navigateur</strong>, idéal pour une page d'administration privée, elles sont chiffrées sur l'appareil.</p>
     <div class="code-steps">
       <div><h3>1. Le script</h3><pre><code>&lt;script src="dolphin.lite.js" defer&gt;&lt;/script&gt;</code></pre></div>
       <div><h3>2. Le composant</h3><pre><code>&lt;dolphin-studio&gt;
@@ -119,16 +235,28 @@
 META_PAGE_ID=… META_PAGE_TOKEN=… \
 DOLPHIN_API_TOKEN=… npx dolphin-server</code></pre></div>
     </div>
-    <p class="more">Exemples HTML, WordPress et React, ainsi que le contrat d'API, sont sur <a href="https://github.com/yassine1158/dolphin">GitHub</a>.</p>
+    <p class="more">Le serveur expose 6 routes documentées (OpenAPI), réimplémentables en PHP, Python, Java ou tout autre langage. Exemples HTML, WordPress et React sur <a href="https://github.com/yassine1158/dolphin">GitHub</a>.</p>
   </section>
 
-  <section class="band" id="licence">
-    <div class="wrap">
-      <h2>Libre, avec une licence commerciale</h2>
-      <div class="lic">
-        <article><h3>AGPL-3.0 · gratuite</h3><p>Utilisez, modifiez et redistribuez DOLPHin. Si vous le modifiez et le proposez en ligne, vous publiez votre code sous AGPL-3.0.</p><a href="https://github.com/yassine1158/dolphin/blob/main/LICENSE">Lire la licence</a></article>
-        <article class="pro"><h3>Licence commerciale</h3><p>Pour l'intégrer sans publier votre code, le proposer à vos clients (agence, hébergeur, SaaS, marque blanche) ou obtenir support et garantie.</p><a href="https://github.com/yassine1158/dolphin/blob/main/COMMERCIAL-LICENSE.md">Conditions et contact</a></article>
-      </div>
+  <!-- ============================================================ faq -->
+  <section class="band" id="faq" aria-labelledby="faq-title">
+    <div class="wrap faq">
+      <h2 id="faq-title">Questions fréquentes</h2>
+      <details><summary>Combien ça coûte ?</summary><p>Le logiciel est gratuit sous licence AGPL-3.0. L'IA (Claude, d'Anthropic) se paie à l'usage : environ 25 FCFA par publication avec le meilleur modèle, et deux fois moins avec Claude Sonnet. DOLPHin affiche le coût réel après chaque génération.</p></details>
+      <details><summary>De quoi ai-je besoin ?</summary><p>Une page Facebook dont vous êtes administrateur, un jeton d'accès de la page (permissions <em>pages_manage_posts</em> et <em>pages_read_engagement</em>), et une clé de l'API Claude. Sans connexion Facebook, vous pouvez quand même générer les publications, télécharger les affiches et copier les textes.</p></details>
+      <details><summary>Est-ce que je dois savoir programmer ?</summary><p>Non pour l'utiliser : tout se fait en cliquant, dans votre espace d'administration. L'installation demande une ligne de code, que votre développeur ou votre hébergeur ajoute en quelques minutes.</p></details>
+      <details><summary>Et Instagram ?</summary><p>Les affiches sont déjà au format Instagram, et les textes se copient en un clic. La publication automatique sur Instagram est prévue dans la version 2.0.</p></details>
+      <details><summary>Mes données sont-elles en sécurité ?</summary><p>En mode serveur, les clés ne quittent jamais votre serveur, qui contrôle un jeton d'accès et n'accepte que les origines autorisées. En mode navigateur, elles sont chiffrées sur l'appareil (AES-GCM 256, clé dérivée par PBKDF2). Le contenu de votre site est envoyé à l'IA comme une donnée, jamais comme une instruction.</p></details>
+      <details><summary>Est-ce que ça marche dans ma langue ?</summary><p>L'interface et les publications existent en français, en anglais et en arabe. En arabe, l'interface et les affiches s'affichent de droite à gauche.</p></details>
+    </div>
+  </section>
+
+  <!-- ============================================================ licence -->
+  <section class="wrap licence" id="licence" aria-labelledby="lic-title">
+    <h2 id="lic-title">Libre, avec une licence commerciale</h2>
+    <div class="lic">
+      <article><h3>AGPL-3.0 · gratuite</h3><p>Utilisez, modifiez et redistribuez DOLPHin. Si vous le modifiez et le proposez en ligne, vous publiez votre code sous AGPL-3.0.</p><a href="https://github.com/yassine1158/dolphin/blob/main/LICENSE">Lire la licence</a></article>
+      <article class="pro"><h3>Licence commerciale</h3><p>Pour l'intégrer sans publier votre code, le proposer à vos clients (agence, hébergeur, SaaS, marque blanche) ou obtenir support et garantie.</p><a href="https://github.com/yassine1158/dolphin/blob/main/COMMERCIAL-LICENSE.md">Conditions et contact</a></article>
     </div>
   </section>
 </main>
@@ -136,11 +264,11 @@ DOLPHIN_API_TOKEN=… npx dolphin-server</code></pre></div>
 <footer class="foot">
   <div class="wrap foot-in">
     <span class="brand small"><img src="dolphin-mark.svg" alt="" width="28" height="28"><span>DOLPH<b>in</b></span></span>
-    <p>Conçu et développé par <strong>Yassine Chaabane</strong> · <a href="https://github.com/yassine1158/dolphin">GitHub</a></p>
+    <p>Conçu et développé par <strong>Yassine Chaabane</strong> · bêta en phase de test · <a href="https://github.com/yassine1158/dolphin">GitHub</a></p>
   </div>
 </footer>
 
 <script src="dolphin.lite.js"></script>
-<script src="demo.js"></script>
+<script src="page.js"></script>
 </body>
 </html>

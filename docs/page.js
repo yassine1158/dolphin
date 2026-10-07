@@ -1,14 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (c) 2026 Yassine Chaabane. Commercial license: COMMERCIAL-LICENSE.md
 //
-// Presentation page demo: the real DOLPHin widget and poster renderer, with a scripted model and a
-// pretend Facebook page instead of the paid APIs. Nothing leaves the visitor's browser.
+// Presentation page: the example posters and the peak-time map are produced by DOLPHin's own
+// renderer and algorithm, from a fictional bakery ("Le Fournil"). No network call, no API key.
 (function () {
   "use strict";
-  const { DolphinStudioElement, CanvasPosterRenderer, mount, analyzePeaks } = window.Dolphin;
-  const wait = ms => new Promise(r => setTimeout(r, ms));
+  const { CanvasPosterRenderer, analyzePeaks } = window.Dolphin;
 
-  // ---------------------------------------------------------------- scripted model
   const DRAFTS = [
     { tag: "Ce matin", title: "Le pain sort du four à 6 h", subtitle: "Au feu de bois, à Cocody", points: ["Baguette tradition", "Croûte croustillante", "Prête dès l'ouverture"], style: "checks", theme: "dark",
       caption: "🥖 6 h du matin : la première fournée sort du four à bois.\nPassez la prendre encore chaude, ou réservez-la sur WhatsApp.\n\n📍 Le Fournil, Cocody", hashtags: ["LeFournil", "Cocody", "PainChaud", "Abidjan"] },
@@ -21,42 +19,8 @@
     { tag: "Coulisses", title: "Pétri à la main, chaque nuit", subtitle: "Le métier avant tout", points: ["Levain maison", "Farine sélectionnée", "Cuisson au bois"], style: "checks", theme: "dark",
       caption: "🌙 Pendant que vous dormez, nous pétrissons.\nLevain maison, farine sélectionnée et cuisson au feu de bois : c'est notre façon de faire.", hashtags: ["Artisan", "Boulangerie", "LeFournil"] },
   ];
-  let cursor = 0;
 
-  const demoLlm = {
-    async analyze(snapshot, brand) {
-      await wait(1400);
-      return {
-        brand: brand || {
-          name: snapshot.structured.name || "Le Fournil",
-          location: "Cocody, Abidjan",
-          audience: "familles, bureaux et fêtes du quartier",
-          language: "fr",
-          products: [
-            { name: "Pain au feu de bois", status: "available", details: "Cuit chaque matin à 6 h." },
-            { name: "Viennoiseries pur beurre", status: "available" },
-            { name: "Gâteaux d'anniversaire sur commande", status: "available" },
-            { name: "Livraison à domicile", status: "soon" },
-          ],
-          contact: { callToAction: "Commandez sur WhatsApp" },
-        },
-        ideas: [
-          { title: "La fournée de 6 h", angle: "Montrer le pain qui sort du four à bois", product: "Pain au feu de bois", why: "Donne envie de passer le matin" },
-          { title: "Votre gâteau d'anniversaire", angle: "Expliquer la commande 48 h à l'avance", product: "Gâteaux d'anniversaire sur commande", why: "Facilite les commandes de fête" },
-          { title: "Garder son pain frais", angle: "Trois gestes simples", why: "Conseil utile, qui crée la confiance" },
-          { title: "La livraison arrive bientôt", angle: "Inviter à être prévenu", product: "Livraison à domicile", why: "Prépare le lancement" },
-        ],
-        usage: { inputTokens: 4000, outputTokens: 1200 },
-        model: "démo",
-      };
-    },
-    async generate(brand, request) {
-      await wait(1600);
-      const drafts = Array.from({ length: request.count }, () => DRAFTS[cursor++ % DRAFTS.length]);
-      return { drafts, usage: { inputTokens: 3000, outputTokens: 1500 * request.count }, model: "démo" };
-    },
-  };
-  // a pretend page history: the bakery's audience reacts most on weekday evenings and Saturday mornings
+  // a fictional page history: the bakery's audience reacts most on weekday evenings and Saturday mornings
   const history = () => {
     const rows = [], now = new Date();
     for (let i = 1; i <= 60; i++) {
@@ -67,24 +31,6 @@
     }
     return rows;
   };
-  const demoPublisher = {
-    async publish() { await wait(700); return { id: "demo-" + Date.now() }; },
-    async verify() { return { name: "Page démo" }; },
-    async history() { await wait(900); return history(); },
-  };
-  DolphinStudioElement.directFactory = () => ({ llm: demoLlm, publisher: demoPublisher });
-
-  // ---------------------------------------------------------------- live demo
-  const host = document.getElementById("demo-studio");
-  const start = document.getElementById("demo-start");
-  const run = () => {
-    try { Object.keys(localStorage).filter(k => k.startsWith("dolphin:demo-fournil:")).forEach(k => localStorage.removeItem(k)); } catch (e) { /* storage blocked */ }
-    host.replaceChildren();
-    mount(host, { id: "demo-fournil", mode: "direct", siteUrl: "demo/site.html", secrets: { claudeKey: "demo" }, showConnections: false, lang: "fr" });
-    start.textContent = "Recommencer la démo";
-  };
-  start.addEventListener("click", run);
-
   // ---------------------------------------------------------------- hero posters, drawn by the real renderer
   const brand = {
     id: "hero", name: "Le Fournil", language: "fr",
