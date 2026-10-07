@@ -16,6 +16,12 @@ export interface DolphinConfig {
     model?: string;
     fonts?: PosterFonts;
     graphVersion?: string;
+    /**
+     * Direct mode with keys managed by the host page (it already has its own login and storage):
+     * no passphrase screen. The host is told about new keys through `onSecretsChange`.
+     */
+    secrets?: StudioSecrets;
+    onSecretsChange?: (secrets: StudioSecrets) => void | Promise<void>;
 }
 export type DirectFactory = (secrets: StudioSecrets, config: DolphinConfig) => Pick<StudioDeps, "llm" | "publisher">;
 export declare class DolphinStudioElement extends HTMLElement {
@@ -40,6 +46,7 @@ export declare class DolphinStudioElement extends HTMLElement {
     get config(): DolphinConfig | undefined;
     set config(value: DolphinConfig);
     private get mode();
+    private get hostManaged();
     private get model();
     private init;
     private render;

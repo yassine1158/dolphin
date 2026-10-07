@@ -9,7 +9,7 @@ import { DolphinError, HTTP_STATUS, isDolphinError } from "../core/errors.js";
 import type { BrandProfile } from "../core/types.js";
 import type { LlmPort, PublisherPort } from "../ports/index.js";
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 
 export interface ServerOptions {
   llm?: LlmPort;
